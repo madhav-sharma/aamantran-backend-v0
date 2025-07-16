@@ -78,24 +78,6 @@ async def update_guest_endpoint(guest_id: int, update_data: GuestUpdate):
         raise HTTPException(status_code=500, detail="Failed to update guest")
 
 
-@router.delete("/guests/{guest_id}")
-async def delete_guest(guest_id: int):
-    """
-    Delete a guest
-    """
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM guests WHERE id = ?", (guest_id,))
-            if cursor.rowcount == 0:
-                raise HTTPException(status_code=404, detail="Guest not found")
-            conn.commit()
-            return {"message": "Guest deleted", "guest_id": guest_id}
-    except Exception as e:
-        logger.error(f"Error deleting guest: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete guest")
-
-
 @router.get("/ready-guests")
 async def get_ready_guests():
     """

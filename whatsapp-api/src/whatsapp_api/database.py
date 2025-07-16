@@ -50,9 +50,43 @@ def init_database():
             )
         """)
         
+        # Create WhatsApp API calls table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS whatsapp_api_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                guest_id INTEGER,
+                direction VARCHAR(10) CHECK (direction IN ('request', 'response')),
+                method VARCHAR(10),
+                url TEXT,
+                headers TEXT,
+                payload TEXT,
+                status_code INTEGER,
+                response_time_ms INTEGER,
+                error_message TEXT,
+                FOREIGN KEY (guest_id) REFERENCES guests(id)
+            )
+        """)
+        
+        # Create webhook payloads table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS webhook_payloads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                event_type VARCHAR(50),
+                payload TEXT,
+                headers TEXT,
+                processed BOOLEAN DEFAULT 0
+            )
+        """)
+        
         # Create indexes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_group_id ON guests(group_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_message_id ON guests(message_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_calls_timestamp ON whatsapp_api_calls(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_calls_guest_id ON whatsapp_api_calls(guest_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_webhooks_timestamp ON webhook_payloads(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_webhooks_event_type ON webhook_payloads(event_type)")
         
         conn.commit()
         logger.info("Database initialized successfully")
@@ -66,4 +100,9 @@ def get_db():
     try:
         yield conn
     finally:
-        conn.close() 
+        conn.close()
+
+
+def get_db_path():
+    """Get the database path as a string"""
+    return str(DB_PATH) 
