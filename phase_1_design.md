@@ -3,7 +3,7 @@
 ## Technical Design Document
 
 ### Version
-V1.2 - Updated to include Appendix A on preserving form data during validation failures.
+V1.3 - Updated to include Appendix C on phone number enhancements.
 
 ### Overview
 This document outlines the technical design for a simple, local Wedding RSVP Management application using a WhatsApp chatbot. The application is designed for a single wedding (not a SaaS product), running on a home PC with no cloud dependencies, auto-scaling, or Docker. It uses FastAPI as the web framework, Jinja templates for the UI, SQLite as the database, and direct integration with the WhatsApp API for messaging. All operations are local, with logging for API interactions stored in the database.
@@ -15,7 +15,7 @@ Key goals:
 
 ### System Architecture
 - **Backend**: FastAPI application serving API endpoints and Jinja-templated HTML pages.
-- **Frontend/UI**: Simple HTML tables rendered via Jinja, with forms for adding guests and triggering sends. No JavaScript frameworks; basic HTML/CSS for UX (e.g., table with input row at bottom).
+- **Frontend/UI**: Simple HTML tables rendered via Jinja, with forms for adding guests and triggering sends. No JavaScript frameworks; basic HTML/CSS for UX (e.g., table with input row at bottom). Minimal inline JavaScript allowed for specific enhancements (e.g., debouncing, auto-submit) as per appendices.
 - **Database**: SQLite file (e.g., `wedding.db`) for storing guests and logs.
 - **Messaging**: Direct WhatsApp Business API calls (using `requests` library or similar) for sending messages. Webhook endpoint in FastAPI to receive status updates (sent/delivered/read).
 - **Background Tasks**: Use FastAPI's `BackgroundTasks` for processing webhooks (e.g., update DB statuses asynchronously).
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS guests (
 - **Constraints/Validations** (handled at application level, not DB constraints for simplicity):
   - `first_name` and `last_name`: Required, non-empty strings.
   - `greeting_name`: Optional string.
-  - `phone`: Required if `is_group_primary` is True; optional otherwise (non-primaries without phone won't receive messages). Validate as E.164 format (e.g., starts with '+', digits only).
+  - `phone`: Required if `is_group_primary` is True; optional otherwise (non-primaries without phone won't receive messages). Validate as E.164 format restricted to +91 (India, 10 digits) or +971 (UAE, 9 digits) (e.g., starts with '+', specific lengths). Additional uniqueness check as per Appendix C.
   - `group_id`: Required non-empty string. App-level unique check: Ensure no duplicates across records (but allow multiple guests per group_id).
   - `is_group_primary`: 
     - For new group_id: Must be True (primary added first).
@@ -82,20 +82,20 @@ CREATE TABLE IF NOT EXISTS logs (
 
 ### User Interface (UI)
 - **Main Page**: `/` (GET) - Renders a Jinja template with:
-  - A table displaying all guests from DB, columns: ID, First Name, Last Name, Greeting Name, Phone, Group ID, Is Primary (checkbox, read-only), Ready (editable checkbox), Sent to WA (text), Sent At (datetime or 'N/A'), Delivered At (datetime or 'N/A'), Read At (datetime or 'N/A'), Message ID.
+  - A table displaying all guests from DB, columns: ID, First Name, Last Name, Greeting Name, Phone (with color class as per Appendix C), Group ID, Is Primary (checkbox, read-only), Ready (editable checkbox with auto-submit as per Appendix B), Sent to WA (text), Sent At (datetime or 'N/A'), Delivered At (datetime or 'N/A'), Read At (datetime or 'N/A'), Message ID.
   - Rows sorted by group_id then is_group_primary (descending).
-  - At the bottom: Inline input fields for new guest (First Name, Last Name, Greeting Name, Phone, Group ID, Is Primary checkbox).
+  - At the bottom: Inline input fields for new guest (First Name, Last Name, Greeting Name, Phone (with id="phone-input" and <span id="phone-error"></span> for validation as per Appendix C), Group ID, Is Primary checkbox).
   - Button next to inputs: "Add Guest" (POST to `/add-guest`, validates, adds to DB, redirects to refresh page).
   - Another button: "Send Invites" (POST to `/send-invites`, scans for ready=True and sent_to_whatsapp='pending', sends messages).
-  - UX: Table allows seeing all records while adding (no separate form). Use simple CSS for validation errors (e.g., red borders). Display 'N/A' or empty for NULL timestamps.
+  - UX: Table allows seeing all records while adding (no separate form). Use simple CSS for validation errors (e.g., red borders). Display 'N/A' or empty for NULL timestamps. Inline JS for phone debouncing/formatting and ready auto-submit.
 - **No Bulk Upload**: Addition feels "bulk-like" but is one-at-a-time with context (user sees previous for reference, e.g., to match group_ids).
-- **Validation Feedback**: On add, if invalid (e.g., missing phone for primary), show error message above table and preserve inputs.
+- **Validation Feedback**: On add, if invalid (e.g., missing phone for primary, duplicate phone), show error message above table and preserve inputs (as per Appendix A/B).
 
 ### API Endpoints (FastAPI)
-- **GET /**: Render main Jinja template with guests data (query DB: `SELECT * FROM guests ORDER BY group_id, is_group_primary DESC`).
+- **GET /**: Render main Jinja template with guests data (query DB: `SELECT * FROM guests ORDER BY group_id, is_group_primary DESC`). Compute phone_class for each guest (as per Appendix C) and pass to template.
 - **POST /add-guest**: 
-  - Parse form data (first_name, etc.).
-  - Validate fields and group rules (e.g., query DB for existing group_id, check primary rules).
+  - Parse form data (first_name, etc.). Strip any human-readable formatting from phone (e.g., remove dashes) for phone before validation/storage.
+  - Validate fields, group rules (e.g., query DB for existing group_id, check primary rules), phone uniqueness and format (as per Appendix C).
   - If valid, insert into DB with raw SQL.
   - Redirect to `/`.
 - **POST /send-invites**:
@@ -116,24 +116,25 @@ CREATE TABLE IF NOT EXISTS logs (
   - Query guests by message_id to find match.
   - Update corresponding _at field (e.g., sent_at = webhook_timestamp or CURRENT_TIMESTAMP) and updated_at.
   - If no match or multi: Log with NULL guest_id.
-- **PATCH /update-ready/{guest_id}**: (If needed for checkbox updates; else handle via form in table.)
+- **POST /update-ready/{guest_id}**: Update ready field as per Appendix B (POST for form compatibility).
 
 ### Messaging Flow
-- **Pre-Invite Send**: Hard-coded template (out of scope for details; e.g., "Dear {name}, ..."). Send only to guests with phone numbers (primaries required to have one; non-primaries optional).
+- **Pre-Invite Send**: Hard-coded template (out of scope for details; e.g., "Dear {name}, ..."). Send only to guests with phone (primaries required to have one; non-primaries optional).
 - **Webhook Processing**: Background task parses payload, matches via message_id, updates DB timestamps for sent_at, delivered_at, read_at. Store all in logs.
 - **Tracking**: UI table shows timestamps (indicating occurrence); no auto-retries (manual via "Send Invites" button).
 
 ### Security/Edge Cases
-- Local-only: No auth needed; assume single user.
+- Local-only: No auth needed (assume single user).
 - Validation: App-level for all rules to keep DB simple.
 - Errors: Log failures; show in UI if critical.
-- Data Integrity: Unique group_id check on add (query existing).
+- Data Integrity: Unique group_id check on add (query existing); phone uniqueness as per Appendix C.
 
 ### Dependencies
 - FastAPI
 - Jinja2
 - requests (for WhatsApp API)
 - sqlite3 (built-in)
+- Starlette (for SessionMiddleware as per Appendix B)
 
 ### Future Extensions (Out of Scope)
 - RSVP button handling.
@@ -152,7 +153,7 @@ This appendix provides implementation guidance for ensuring that, upon validatio
 #### Implementation Approach
 - **Handle in FastAPI Endpoint** (/add-guest):
   - Use Pydantic or manual dict to parse form data into a guest_data object/dict.
-  - Perform validations; if any fail (e.g., for is_group_primary_primary'):
+  - Perform validations; if any fail (e.g., for is_group_primary):
     - Query DB: `cur.execute("SELECT COUNT(*) FROM guests WHERE group_id = ? AND is_group_primary = 1", (group_id,))` to check existing primaries.
     - If invalid, do NOT insert; instead, prepare to re-render the main template (/) with additional context:
       - Pass `error_message = "Specific error, e.g., 'Cannot add non-primary to new group; primary must be added first.'"`
@@ -173,6 +174,8 @@ This appendix provides implementation guidance for ensuring that, upon validatio
   - Multiple errors: Collect all validation errors in a list and display as bullet points.
   - Security: Escape inputs in Jinja to prevent XSS (though local-only).
   - Testing: Simulate failures (e.g., invalid group_id) to verify data persistence.
+
+This appendix ensures the existing design supports data preservation without changing core flows or introducing new features like client-side validation.
 
 ### Appendix B: Implementing the Ready Update with Auto-Submit and Preserving Incomplete Add Form Data
 
@@ -329,3 +332,5 @@ This appendix introduces new requirements for phone number management, including
   - **Expansion**: If needed, assign additional codes to 'cc-other'.
 
 These requirements enhance data integrity and UX without complexity; implement sequentially starting with uniqueness.
+
+This design provides a solid foundation for implementation. If any clarifications or adjustments are needed, let me know!
