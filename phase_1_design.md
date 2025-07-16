@@ -174,4 +174,54 @@ This appendix provides implementation guidance for ensuring that, upon validatio
   - Security: Escape inputs in Jinja to prevent XSS (though local-only).
   - Testing: Simulate failures (e.g., invalid group_id) to verify data persistence.
 
-This appendix ensures the existing design supports data preservation without changing core flows or introducing new features like client-side validation.
+### Appendix B: Implementing the Ready Update with Auto-Submit and Preserving Incomplete Add Form Data
+
+This appendix provides guidance for enhancing the 'ready' field update mechanism using the optional PATCH /update-ready/{guest_id} endpoint (or a POST equivalent for simplicity). The goal is to enable auto-submission when ticking the 'ready' checkbox in the UI table, while preserving any incomplete data in the add-guest form (e.g., from a prior validation failure). This builds on the existing design without altering core requirements, keeping things simple (no JS frameworks, but allowing basic inline JavaScript for auto-submit since it's minimal and HTML-native). If preserving across updates proves too complex, it can be omitted as a V1 nice-to-have.
+
+#### Rationale
+- **Auto-Submit on Tick**: Users can click the 'ready' checkbox in a table row, triggering an immediate update without a separate "Save" button, improving UX for quick flagging.
+- **Preserve Incomplete Add Form**: If the add-guest form at the bottom has pre-filled data (e.g., from a failed validation), updating a 'ready' checkbox elsewhere should not clear it on page reload. This avoids frustrating re-entry.
+
+#### Implementation Approach
+1. **Endpoint Setup**:
+   - Use PATCH /update-ready/{guest_id} (or POST /update-ready/{guest_id} if PATCH is tricky with forms).
+   - Logic:
+     - Extract `guest_id` from path and `ready` (boolean) from form data (e.g., checkbox value).
+     - Validate: Ensure guest exists (query DB: `SELECT 1 FROM guests WHERE id = ?`).
+     - Update DB: `UPDATE guests SET ready = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?` (use 1/0 for boolean).
+     - To handle preservation: If the request includes optional `form_data` (serialized, e.g., as JSON in a hidden field or query param), pass it back. But for simplicity, use server-side session storage (via Starlette middleware in FastAPI) to temporarily store incomplete add form data.
+     - Redirect to / (with optional query param like ?error=... if needed, but primarily for success).
+   - Enable sessions in FastAPI: Add `app = FastAPI()` with middleware like `app.add_middleware(SessionMiddleware, secret_key="local_secret")`. This is lightweight and fits the local app.
+
+2. **UI Adjustments (Jinja Template)**:
+   - For each table row's 'ready' column:
+     ```html
+     <form method="POST" action="/update-ready/{{ guest.id }}">  <!-- Use POST for form compatibility -->
+       <input type="checkbox" name="ready" {% if guest.ready %}checked{% endif %} onchange="this.form.submit()">
+     </form>
+     ```
+     - The `onchange="this.form.submit()"` uses basic inline JS to auto-submit on tick/untick. (No external JS file needed; this is HTML5-compatible and simple.)
+   - For the add-guest form (bottom row):
+     - No changes to inputs, but on validation failure in /add-guest, store the form_data in session: `request.session['add_form_data'] = {'first_name': form.first_name, ...}` before re-rendering /.
+     - On rendering / (GET or after redirects):
+       - Check session for 'add_form_data'; if present, pass to template as `form_data` and pre-fill:
+         ```jinja
+         <input type="text" name="first_name" value="{{ form_data.first_name if form_data else '' }}">
+         <!-- Similarly for other fields, including checkbox for is_group_primary -->
+         ```
+       - After successful add, clear session: `del request.session['add_form_data']`.
+   - Error display remains as-is (passed via context).
+
+3. **Preservation Across Updates**:
+   - When submitting a 'ready' update (auto or manual), the endpoint redirects to /, where the render checks session for 'add_form_data' and preserves it.
+   - This works because session persists across requests (user's browser cookies handle it locally).
+   - If no incomplete data (normal case), session key is absent, and add form is blank.
+   - Complexity Check: Sessions add minimal overhead (one middleware line); if too complicated, alternative is passing serialized form_data as a hidden field in every ready form or query params on redirect (e.g., /?form_first_name=John&...), but sessions are cleaner and less error-prone.
+
+4. **Edge Cases**:
+   - **No JS Fallback**: If JS is disabled, checkbox won't auto-submit; user would need a "Save" button per row (add <button type="submit">Save</button>).
+   - **Concurrent Actions**: Sessions handle one user fine (local app); no multi-user conflicts.
+   - **Clearing Preservation**: On successful add, delete session data to reset form.
+   - **Testing**: Simulate add failure (e.g., invalid primary), verify preservation; then update a ready checkbox and check add form retains data post-redirect.
+
+This approach keeps the design simple while adding the requested UX improvements. If sessions are undesired, fall back to query params for preservation (append to redirect URL).

@@ -43,9 +43,9 @@ def fetch_guests():
     return [dict(zip(columns, row)) for row in guests]
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, error: str = ""):
+async def home(request: Request, error: str = "", form_data: dict = None, errors: list = None):
     guests = fetch_guests()
-    return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": error})
+    return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": error, "form_data": form_data or {}, "errors": errors or []})
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
@@ -155,8 +155,19 @@ async def add_guest(
     greeting_name: str = Form(None),
     phone: str = Form(None),
     group_id: str = Form(...),
-    is_group_primary: bool = Form(False)
+    is_group_primary: str = Form(None)  # Checkbox returns 'true' or None
 ):
+    # Parse checkbox
+    is_primary_val = is_group_primary == "true"
+    form_data = {
+        "first_name": first_name,
+        "last_name": last_name,
+        "greeting_name": greeting_name,
+        "phone": phone,
+        "group_id": group_id,
+        "is_group_primary": is_primary_val
+    }
+    errors = []
     # Validate using Pydantic
     try:
         guest_in = GuestIn(
@@ -165,29 +176,29 @@ async def add_guest(
             greeting_name=greeting_name,
             phone=phone,
             group_id=group_id,
-            is_group_primary=is_group_primary
+            is_group_primary=is_primary_val
         )
     except Exception as e:
+        errors.append(str(e))
         guests = fetch_guests()
-        return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": str(e)})
-
-    # App-level validation (group_id uniqueness, primary rules)
+        return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "form_data": form_data, "errors": errors})
+    # App-level validation
     conn = db.get_connection()
     c = conn.cursor()
     group_primaries = c.execute("SELECT COUNT(*) FROM guests WHERE group_id = ? AND is_group_primary = 1", (group_id,)).fetchone()[0]
-    if is_group_primary and group_primaries > 0:
+    if is_primary_val and group_primaries > 0:
+        errors.append("Primary already exists for this group_id.")
+    if not is_primary_val and group_primaries == 0:
+        errors.append("Primary must be added first for a new group_id.")
+    if errors:
         conn.close()
         guests = fetch_guests()
-        return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": "Primary already exists for this group_id."})
-    if not is_group_primary and group_primaries == 0:
-        conn.close()
-        guests = fetch_guests()
-        return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": "Primary must be added first for a new group_id."})
+        return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "form_data": form_data, "errors": errors})
     # Insert guest
     c.execute("""
         INSERT INTO guests (first_name, last_name, greeting_name, phone, group_id, is_group_primary, ready)
         VALUES (?, ?, ?, ?, ?, ?, 0)
-    """, (first_name, last_name, greeting_name, phone, group_id, int(is_group_primary)))
+    """, (first_name, last_name, greeting_name, phone, group_id, int(is_primary_val)))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/", status_code=303)

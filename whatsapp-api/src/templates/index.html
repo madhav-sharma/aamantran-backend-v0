@@ -14,7 +14,15 @@
 </head>
 <body>
     <h1>Wedding RSVP Guest List</h1>
-    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% if errors and errors|length > 0 %}
+        <div class="error">
+            <ul>
+            {% for err in errors %}
+                <li>{{ err }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
     <form method="post" action="/send-invites" style="margin-bottom: 1em;">
         <button type="submit">Send Invites</button>
     </form>
@@ -57,12 +65,12 @@
             <tr>
                 <form method="post" action="/add-guest">
                     <td></td>
-                    <td><input name="first_name" type="text" required></td>
-                    <td><input name="last_name" type="text" required></td>
-                    <td><input name="greeting_name" type="text"></td>
-                    <td><input name="phone" type="text"></td>
-                    <td><input name="group_id" type="text" required></td>
-                    <td style="text-align:center"><input name="is_group_primary" type="checkbox" value="true"></td>
+                    <td><input name="first_name" type="text" required value="{{ form_data.first_name|e if form_data.first_name is defined else '' }}"></td>
+                    <td><input name="last_name" type="text" required value="{{ form_data.last_name|e if form_data.last_name is defined else '' }}"></td>
+                    <td><input name="greeting_name" type="text" value="{{ form_data.greeting_name|e if form_data.greeting_name is defined else '' }}"></td>
+                    <td><input name="phone" type="text" value="{{ form_data.phone|e if form_data.phone is defined else '' }}"></td>
+                    <td><input name="group_id" type="text" required value="{{ form_data.group_id|e if form_data.group_id is defined else '' }}"></td>
+                    <td style="text-align:center"><input name="is_group_primary" type="checkbox" value="true" {% if form_data.is_group_primary %}checked{% endif %}></td>
                     <td></td>
                     <td></td>
                     <td></td>
