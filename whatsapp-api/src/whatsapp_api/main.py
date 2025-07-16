@@ -1,176 +1,245 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from datetime import datetime
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response, HTTPException
-
-import aiohttp
-
+from fastapi import FastAPI, Request, Response, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import logging
 
-WHATSAPP_API_BASE_URL = "https://graph.facebook.com"
-WHATSAPP_API_VERSION = "v23.0"
+from .database import init_database, get_db
+from .models import GuestCreate, GuestUpdate, GuestResponse
+from .guests import get_all_guests, create_guest, update_guest, log_api_interaction
+from .rest.whatsapp import send_template_message, process_webhook_data
 
-load_dotenv(dotenv_path='/Users/madhavsharma/dotenv/aamantran.env')
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+# Initialize environment variables
+load_dotenv()
+
+# Retrieve environment variables
 WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
-AIRTABLE_API_TOKEN = os.getenv("AIRTABLE_API_TOKEN")
-AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
-TABLE_NAME = os.getenv("TABLE_NAME")
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(title="Wedding RSVP Management")
 
 # Set up Jinja templates (points to "templates" folder)
 templates = Jinja2Templates(directory="src/templates")
 
-# Mount static files (serves CSS/JS from "/static" URL)
+# Mount static files (CSS, JS, images, etc.)
 app.mount("/static", StaticFiles(directory="src/static"), name="static")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    init_database()
+    logger.info("Application started")
+
 
 # Simple route for the homepage
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    # Render "index.html" from templates folder
-    # Pass any data as a dict, like {"message": "Hello"}
-    return templates.TemplateResponse("index.html", {"request": request, "message": "Welcome to my simple site!"})
+async def read_root(request: Request):
+    """Serve the main page"""
+    return templates.TemplateResponse("index.html", {"request": request})
+
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
-    """
-    Webhook verification endpoint for WhatsApp
-    """
-    print(request)
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
-
+    
     if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN:
-        print("Webhook verified successfully!")
-        return Response(content=challenge, media_type="text/plain")
-    else:
-        print("Webhook verification failed!")
-        return Response(content="Forbidden", status_code=403)
+        return int(challenge)
+    return Response(content="", status_code=403)
+
 
 @app.post("/webhook")
-async def handle_webhook(request: Request):
-    print(request)
-    data = await request.json()
-    print(data)
-    return Response(content="OK", status_code=200)
-
-def create_template_message(
-        recipient: str,
-        template_name: str,
-        language_code: str = "en_US",
-        components: Optional[list] = None
-) -> Dict[str, Any]:
-    """
-    Create a template message payload
-
-    Args:
-        recipient: Phone number in international format
-        template_name: Name of the WhatsApp template
-        language_code: Language code for the template (default: "en_US")
-        components: Optional template components (parameters, buttons, etc.)
-
-    Returns:
-        Message payload dictionary
-    """
-    message = {
-        "messaging_product": "whatsapp",
-        "to": recipient,
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {
-                "code": language_code
-            }
-        }
-    }
-
-    if components:
-        message["template"]["components"] = components
-
-    return message
+async def webhook(request: Request, background_tasks: BackgroundTasks):
+    """WhatsApp webhook endpoint"""
+    webhook_data = await request.json()
+    
+    # Log the webhook
+    log_api_interaction(
+        guest_id=None,
+        log_type="webhook",
+        payload=webhook_data,
+        status="received"
+    )
+    
+    # Process webhook in background
+    background_tasks.add_task(process_webhook_updates, webhook_data)
+    
+    return {"status": "ok"}
 
 
-async def send_whatsapp_message(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Send a message via WhatsApp Business API
-
-    Args:
-        data: The message payload as a dictionary
-
-    Returns:
-        Response from the WhatsApp API
-    """
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-    }
-
-    url = f"{WHATSAPP_API_BASE_URL}/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
-
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(url, json=data, headers=headers) as response:
-                response_data = await response.json()
-
-                if response.status == 200:
-                    print(f"Message sent successfully: {response_data}")
-                    return {"status": "success", "data": response_data}
+async def process_webhook_updates(webhook_data: Dict[str, Any]):
+    """Process webhook updates in background"""
+    try:
+        statuses = process_webhook_data(webhook_data)
+        
+        if not statuses:
+            return
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            for message_id, status_type, timestamp in statuses:
+                # Find guest by message_id
+                cursor.execute("SELECT id FROM guests WHERE message_id = ?", (message_id,))
+                result = cursor.fetchone()
+                
+                if result:
+                    guest_id = result[0]
+                    
+                    # Update based on status type
+                    if status_type == "sent":
+                        cursor.execute(
+                            "UPDATE guests SET sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            (guest_id,)
+                        )
+                    elif status_type == "delivered":
+                        cursor.execute(
+                            "UPDATE guests SET delivered_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            (guest_id,)
+                        )
+                    elif status_type == "read":
+                        cursor.execute(
+                            "UPDATE guests SET read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            (guest_id,)
+                        )
+                    
+                    conn.commit()
+                    logger.info(f"Updated guest {guest_id} with status {status_type}")
                 else:
-                    print(f"Error sending message. Status: {response.status}")
-                    print(f"Response: {response_data}")
-                    return {"status": "error", "code": response.status, "data": response_data}
-
-        except aiohttp.ClientConnectorError as e:
-            print(f"Connection Error: {str(e)}")
-            return {"status": "error", "message": f"Connection error: {str(e)}"}
-        except Exception as e:
-            print(f"Unexpected error: {str(e)}")
-            return {"status": "error", "message": f"Unexpected error: {str(e)}"}
-
-@app.post("/send-template-message")
-async def send_template_message() -> Dict[str, Any]:
-    """
-    Send a template message to a WhatsApp number
-
-    Args:
-        recipient: Phone number in international format
-        template_name: Name of the WhatsApp template
-        language_code: Language code for the template
-        components: Optional template components
-
-    Returns:
-        Response from the WhatsApp API
-    """
-    recipient = "14373668209"
-    template_name = "wedding_pre_invite"
-    language_code = "en_US"
-    components = None
-
-    message_data = create_template_message(recipient, template_name, language_code, components)
-    return await send_whatsapp_message(message_data)
+                    logger.warning(f"No guest found for message_id {message_id}")
+                    
+    except Exception as e:
+        logger.error(f"Error processing webhook updates: {e}")
 
 
-def generate_html_response():
-    html_content = """
-    <html>
-        <head>
-            <title>Some HTML in here</title>
-        </head>
-        <body>
-            <h1>Look ma! HTML!</h1>
-        </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content, status_code=200)
+@app.get("/guests", response_model=List[GuestResponse])
+async def get_guests():
+    """Get all guests"""
+    try:
+        guests = get_all_guests()
+        return guests
+    except Exception as e:
+        logger.error(f"Error fetching guests: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch guests")
 
 
-@app.get("/items/", response_class=HTMLResponse)
-async def read_items():
-    return generate_html_response()
+@app.post("/guests", response_model=GuestResponse, status_code=201)
+async def create_guest_endpoint(guest: GuestCreate):
+    """Create a new guest"""
+    try:
+        new_guest = create_guest(guest)
+        return new_guest
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating guest: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create guest")
+
+
+@app.patch("/guests/{guest_id}", response_model=GuestResponse)
+async def update_guest_endpoint(guest_id: int, update_data: GuestUpdate):
+    """Update a guest"""
+    try:
+        updated_guest = update_guest(guest_id, update_data)
+        if not updated_guest:
+            raise HTTPException(status_code=404, detail="Guest not found")
+        return updated_guest
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating guest: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update guest")
+
+
+@app.post("/send-invites")
+async def send_invites():
+    """Send invites to ready guests"""
+    sent_count = 0
+    failed_count = 0
+    
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Get all ready guests who haven't been sent invites
+            cursor.execute("""
+                SELECT id, prefix, first_name, last_name, greeting_name, phone 
+                FROM guests 
+                WHERE ready = 1 AND sent_to_whatsapp = 'pending' AND phone IS NOT NULL
+            """)
+            
+            guests_to_send = cursor.fetchall()
+            
+            for guest in guests_to_send:
+                guest_id, prefix, first_name, last_name, greeting_name, phone = guest
+                
+                # Use greeting name if available, otherwise construct from prefix + first name
+                if greeting_name:
+                    name = greeting_name
+                else:
+                    # Combine prefix and first name if prefix exists
+                    name_parts = [prefix, first_name] if prefix else [first_name]
+                    name = " ".join(name_parts)
+                
+                try:
+                    # Update api_call_at before making the call
+                    cursor.execute("""
+                        UPDATE guests 
+                        SET api_call_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (guest_id,))
+                    conn.commit()
+                    
+                    # Send WhatsApp message
+                    response = await send_template_message(phone, name, guest_id)
+                    
+                    # Extract message ID from response
+                    message_id = response.get("messages", [{}])[0].get("id")
+                    
+                    if message_id:
+                        # Update guest status
+                        cursor.execute("""
+                            UPDATE guests 
+                            SET sent_to_whatsapp = 'succeeded', 
+                                message_id = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        """, (message_id, guest_id))
+                        conn.commit()
+                        sent_count += 1
+                        logger.info(f"Successfully sent invite to guest {guest_id}")
+                    else:
+                        raise Exception("No message ID in response")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to send invite to guest {guest_id}: {e}")
+                    # Update guest status to failed
+                    cursor.execute("""
+                        UPDATE guests 
+                        SET sent_to_whatsapp = 'failed',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (guest_id,))
+                    conn.commit()
+                    failed_count += 1
+        
+        return {
+            "message": f"Invites sent: {sent_count} succeeded, {failed_count} failed",
+            "sent": sent_count,
+            "failed": failed_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in send_invites: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send invites")

@@ -2,12 +2,116 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Simple Site</title>
-    <link rel="stylesheet" href="/static/css/style.css">  <!-- Links to CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wedding RSVP Management</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>{{ message }}</h1>  <!-- Jinja variable from Python code -->
-    <p>This is a minimal FastAPI + Jinja site.</p>
-    <script src="/static/js/script.js"></script>  <!-- Links to JS -->
+    <div class="container">
+        <header>
+            <h1>Wedding RSVP Management</h1>
+            <p class="subtitle">Manage your guest list and send WhatsApp invitations</p>
+        </header>
+
+        <main>
+            <!-- Add Guest Form -->
+            <section class="add-guest-section">
+                <h2>Add New Guest</h2>
+                <form id="add-guest-form" class="guest-form">
+                    <div class="form-row">
+                        <div class="form-group small">
+                            <label for="prefix">Prefix</label>
+                            <input type="text" id="prefix" name="prefix" 
+                                   placeholder="Mr/Ms/Dr">
+                            <span id="prefix-error" class="error-message"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="first_name">First Name*</label>
+                            <input type="text" id="first_name" name="first_name" required>
+                            <span id="first-name-error" class="error-message"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="last_name">Last Name*</label>
+                            <input type="text" id="last_name" name="last_name" required>
+                            <span id="last-name-error" class="error-message"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="greeting_name">Greeting Name</label>
+                            <input type="text" id="greeting_name" name="greeting_name" 
+                                   placeholder="Optional custom greeting (max 60 chars)">
+                            <span id="greeting-error" class="error-message"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="phone">Phone Number</label>
+                            <input type="tel" id="phone-input" name="phone" 
+                                   placeholder="+1-234-567-8901 or +919876543210">
+                            <span id="phone-error" class="error-message"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="group_id">Group ID*</label>
+                            <input type="text" id="group_id" name="group_id" required
+                                   placeholder="e.g., familysmith">
+                            <span id="group-id-error" class="error-message"></span>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="is_group_primary" name="is_group_primary">
+                                Is Primary Contact
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Add Guest</button>
+                        <button type="button" class="btn btn-secondary" id="send-invites-btn">
+                            Send Invites to Ready Guests
+                        </button>
+                    </div>
+                </form>
+                <div id="form-message" class="message"></div>
+            </section>
+
+            <!-- Guests Table -->
+            <section class="guests-section">
+                <h2>Guest List</h2>
+                <div class="table-container">
+                    <table id="guests-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Greeting Name</th>
+                                <th>Phone</th>
+                                <th>Group ID</th>
+                                <th>Primary</th>
+                                <th>Ready</th>
+                                <th>Sent to WA</th>
+                                <th>Sent At</th>
+                                <th>Delivered At</th>
+                                <th>Read At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="guests-tbody">
+                            <!-- Guests will be populated here via JavaScript -->
+                        </tbody>
+                    </table>
+                    <div id="no-guests" class="no-data">No guests added yet.</div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2024 Wedding RSVP Management System</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
 </body>
 </html>
