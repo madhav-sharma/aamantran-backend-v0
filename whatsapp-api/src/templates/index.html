@@ -56,7 +56,7 @@
                 <td>{{ g.first_name }}</td>
                 <td>{{ g.last_name }}</td>
                 <td>{{ g.greeting_name or '' }}</td>
-                <td class="{{ g.phone_class }}">{{ g.phone|format_phone }}</td>
+                <td class="{{ g.phone_class }} phone-cell" data-phone="{{ g.phone }}"></td>
                 <td>{{ g.group_id }}</td>
                 <td><input type="checkbox" {% if g.is_group_primary %}checked{% endif %} disabled></td>
                 <td>
@@ -101,6 +101,18 @@
           timeout = setTimeout(() => func(...args), delay);
         };
       }
+      // Format phone number for display (India & UAE)
+      function formatPhoneForDisplay(value) {
+        if (value.startsWith('+91') && value.length === 13) {
+          return '+91-' + value.slice(3, 8) + '-' + value.slice(8);
+        }
+        if (value.startsWith('+971') && value.length === 13) {
+          return '+971-' + value.slice(4, 6) + '-' + value.slice(6, 9) + '-' + value.slice(9);
+        }
+        return value;
+      }
+
+      // Validate phone number without altering the actual input value
       function validateAndFormatPhone(input) {
         let value = input.value.trim().replace(/[^+\d]/g, '');  // Strip non-digits except +
         const errorSpan = document.getElementById('phone-error');
@@ -126,11 +138,17 @@
           input.style.border = '';
           errorSpan.textContent = '';
           if (isValid) {
-            input.value = formatted;  // Apply human-readable format to input
+            // Do NOT alter the input value – keep raw E.164 so backend validation works
+            // Instead, you could show formatted preview if desired
           }
         }
       }
+      // Apply formatting to existing phone cells once the DOM is ready
       document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.phone-cell').forEach(cell => {
+          const raw = cell.dataset.phone;
+          cell.textContent = formatPhoneForDisplay(raw);
+        });
         const phoneInput = document.getElementById('phone-input');
         if (phoneInput) {
           const debouncedValidate = debounce(validateAndFormatPhone, 300);

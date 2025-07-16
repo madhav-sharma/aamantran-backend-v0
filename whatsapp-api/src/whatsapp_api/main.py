@@ -29,9 +29,9 @@ app.add_middleware(SessionMiddleware, secret_key="local_secret")
 
 # Set up Jinja templates (points to "templates" folder)
 templates = Jinja2Templates(directory="src/templates")
-from .filters import format_phone
+
 # Register custom filter for phone formatting
-templates.env.filters['format_phone'] = format_phone
+
 
 # Mount static files (serves CSS/JS from "/static" URL)
 app.mount("/static", StaticFiles(directory="src/static"), name="static")
