@@ -87,9 +87,9 @@ function validateAndFormatName(input, fieldName) {
     return isValid;
 }
 
-// Greeting validation (max 60 characters)
+// Greeting validation (max 60 characters, free-form text allowed)
 function validateGreeting(input) {
-    const value = input.value.trim();
+    const value = input.value; // Don't trim - preserve user's exact input including spaces
     const errorSpan = document.getElementById('greeting-error');
     let errorMessage = '';
     let isValid = true;
@@ -428,7 +428,7 @@ async function handleAddGuest(event) {
         prefix: formData.get('prefix').trim() || null,
         first_name: formData.get('first_name').trim(),
         last_name: formData.get('last_name').trim(),
-        greeting_name: formData.get('greeting_name').trim() || null,
+        greeting_name: formData.get('greeting_name') || null,  // Don't trim - preserve exact user input
         phone: phoneInput.value ? phoneInput.value.replace(/[^\d+]/g, '') : null,  // Remove all formatting except + and digits
         group_id: formData.get('group_id').trim(),
         is_group_primary: isPrimary,
@@ -512,7 +512,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (greetingInput) {
         greetingInput.addEventListener('input', () => {
-            validateAndFormatName(greetingInput, 'greeting-name');
             validateGreeting(greetingInput);
         });
     }

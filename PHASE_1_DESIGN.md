@@ -38,7 +38,7 @@ Use SQLAlchemy for DB interactions (declarative models with sessions for CRUD op
 
 This application strictly separates validation concerns between client and server:
 
-- **Client-Side Validation**: ALL format validation (names contain only letters, phone numbers match E.164 format, group_id contains only lowercase letters). Client-side prevents submission of invalid formats but does not check against database records. The submit button is disabled until all format validations pass.
+- **Client-Side Validation**: ALL format validation (names contain only letters except greeting_name which allows free-form text, phone numbers match E.164 format, group_id contains only lowercase letters, greeting_name max 60 characters). Client-side prevents submission of invalid formats but does not check against database records. The submit button is disabled until all format validations pass.
 - **Server-Side Validation**: Business logic validation against database records ONLY (phone number uniqueness, group primary rules, ensuring primaries have phone numbers). Server does NOT re-validate formats - no regex checks, no pattern matching, no string formatting.
 
 **Important**: The server must trust that the client has already validated formats. Server-side code should NOT include:
@@ -94,7 +94,7 @@ class Guest(Base):
 
 - `prefix`: Optional string; format validated client-side only.
 - `first_name` and `last_name`: Required, non-empty strings; format validated client-side only (Appendix A).
-- `greeting_name`: Optional string; format validated client-side only (Appendix A).
+- `greeting_name`: Optional string; free-form text with spaces and any capitalization allowed. Maximum 60 characters validated client-side only.
 - `phone`: Required if `is_group_primary` is True; optional otherwise. Format validated client-side only (Appendix C). Uniqueness enforced at database level. Store clean E.164 without dashes or formatting.
 - `group_id`: Required non-empty string; format validated client-side only (Appendix D). Server validates business rules for group primary logic.
 - `is_group_primary`: Server validates business rules:
@@ -216,7 +216,7 @@ class Log(Base):
 
 ### Appendix A: Additional Requirements for Name Handling
 
-This appendix introduces new requirements for name fields (prefix, first_name, last_name, greeting_name) management, including prefix support and client-side real-time capitalization/sanitization. These enhancements build on the existing design (e.g., names as strings, required for first/last) without altering core flows. Implementation uses only front-end checks for format validation, JavaScript for UI interactions. All format validation is client-side only.
+This appendix introduces new requirements for name fields (prefix, first_name, last_name) management, including prefix support and client-side real-time capitalization/sanitization. Note that greeting_name is NOT subject to these formatting rules and allows free-form text. These enhancements build on the existing design (e.g., names as strings, required for first/last) without altering core flows. Implementation uses only front-end checks for format validation, JavaScript for UI interactions. All format validation is client-side only.
 
 #### 1. Prefix Support
 
@@ -229,7 +229,9 @@ This appendix introduces new requirements for name fields (prefix, first_name, l
 
 #### 2. UI-Level Real-Time Typing Check for Capitalization and Sanitization
 
-**Requirement**: For prefix, first_name, last_name, and greeting_name inputs, provide instant browser-side feedback: As typing, automatically capitalize the first letter and lowercase the rest (e.g., "john" -> "John"). Instantly sanitize by removing non-letter inputs (allow only a-zA-Z; disallow spaces, numbers/symbols). If sanitization removes characters, show a transient inline message (e.g., "Invalid characters removed"). Flag errors if name is empty (for required fields). Prevent submission if invalid; show red border and inline message (e.g., "This field is required"). No debouncing needed—immediate on input. Fixed case structure: first capital, rest lower, no spaces.
+**Requirement**: For prefix, first_name, and last_name inputs (NOT greeting_name), provide instant browser-side feedback: As typing, automatically capitalize the first letter and lowercase the rest (e.g., "john" -> "John"). Instantly sanitize by removing non-letter inputs (allow only a-zA-Z; disallow spaces, numbers/symbols). If sanitization removes characters, show a transient inline message (e.g., "Invalid characters removed"). Flag errors if name is empty (for required fields). Prevent submission if invalid; show red border and inline message (e.g., "This field is required"). No debouncing needed—immediate on input. Fixed case structure: first capital, rest lower, no spaces.
+
+For greeting_name: Allow free-form text with spaces, numbers, symbols, and any capitalization. Only validate maximum length of 60 characters.
 
 **Implementation Guidance**:
 
@@ -283,8 +285,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const nameInputs = [
         {id: 'prefix-input', error: 'prefix-error', required: false},
         {id: 'first-name-input', error: 'first-name-error', required: true},
-        {id: 'last-name-input', error: 'last-name-error', required: true},
-        {id: 'greeting-name-input', error: 'greeting-name-error', required: false}
+        {id: 'last-name-input', error: 'last-name-error', required: true}
     ];
     nameInputs.forEach(({ id, error, required }) => {
         const input = document.getElementById(id);
@@ -292,6 +293,22 @@ document.addEventListener('DOMContentLoaded', function() {
             input.addEventListener('input', () => sanitizeAndCapitalizeName(input, error, required));
         }
     });
+    
+    // Separate handling for greeting_name - only length validation
+    const greetingInput = document.getElementById('greeting-name-input');
+    if (greetingInput) {
+        greetingInput.addEventListener('input', () => {
+            const errorSpan = document.getElementById('greeting-name-error');
+            if (greetingInput.value.length > 60) {
+                greetingInput.style.border = '1px solid red';
+                errorSpan.textContent = `Must be 60 characters or less (currently ${greetingInput.value.length})`;
+                errorSpan.style.color = 'red';
+            } else {
+                greetingInput.style.border = '';
+                errorSpan.textContent = '';
+            }
+        });
+    }
 });
 ```
 
@@ -304,8 +321,9 @@ document.addEventListener('DOMContentLoaded', function() {
 #### 3. Edge Cases
 
 - Empty optional fields (greeting_name, prefix): Allow, no error.
-- Names with spaces/symbols: Automatically remove them, capitalize the resulting string.
-- Storage: Names stored as formatted (capitalized, sanitized); prefix separate.
+- Names with spaces/symbols (prefix, first_name, last_name): Automatically remove them, capitalize the resulting string.
+- Greeting name: Store exactly as entered by user, preserving spaces, capitalization, and special characters (up to 60 chars).
+- Storage: Names stored as formatted (capitalized, sanitized) except greeting_name which is stored as-is; prefix separate.
 
 These requirements enhance data quality and UX for names; implement after phone handling.
 
@@ -826,7 +844,7 @@ GET /
 
 ### Validation Types
 
-- **Client-Side**: ALL format validation (names a-zA-Z only, phone E.164 format, group_id a-z only, greeting name max 60 chars). Submit button disabled until valid.
+- **Client-Side**: ALL format validation (names a-zA-Z only except greeting_name which allows any text, phone E.164 format, group_id a-z only, greeting_name max 60 chars). Submit button disabled until valid.
 - **Server-Side**: Business logic validation ONLY (phone uniqueness via DB constraint, group primary rules via DB queries, primary phone requirement)
 
 
