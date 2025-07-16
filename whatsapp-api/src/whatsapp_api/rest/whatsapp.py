@@ -206,58 +206,6 @@ async def handle_webhook(request: Request):
         return Response(content="OK", status_code=200)
 
 
-@router.post("/test_whatsapp_api")
-async def send_template_message_endpoint() -> Dict[str, Any]:
-    """
-    Test endpoint - Send a template message to a WhatsApp number
-    This endpoint is isolated and doesn't use the common logging flow
-    """
-    recipient = "14373668209"
-    template_name = "wedding_pre_invite_1"
-    language_code = "en_US"
-    
-    # Inline the entire flow for test endpoint
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-    }
-    
-    message_data = {
-        "messaging_product": "whatsapp",
-        "to": recipient,
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {
-                "code": language_code
-            },
-            "components": [{
-                    "type": "body",
-                    "parameters": [{"type": "text", "text": "Madhav Sharma", "parameter_name": "name"}]
-                }]
-        }
-    }
-    
-    url = f"{WHATSAPP_API_BASE_URL}/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(url, json=message_data, headers=headers) as response:
-                response_data = await response.json()
-                
-                if response.status == 200:
-                    print(f"Test message sent successfully: {response_data}")
-                    return {"status": "success", "data": response_data}
-                else:
-                    print(f"Test message error. Status: {response.status}")
-                    print(f"Response: {response_data}")
-                    return {"status": "error", "code": response.status, "data": response_data}
-                    
-        except Exception as e:
-            print(f"Test endpoint error: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-
 async def send_invite_to_guest(phone_number: str, guest_name: str, guest_id: int):
     """
     Background task to send WhatsApp invite to a single guest
@@ -271,7 +219,11 @@ async def send_invite_to_guest(phone_number: str, guest_name: str, guest_id: int
             components=[
                 {
                     "type": "body",
-                    "parameters": [{"type": "text", "text": guest_name}]
+                    "parameters": [{
+                        "type": "text",
+                        "text": guest_name,
+                        "parameter_name": "name"
+                    }]
                 }
             ]
         )
@@ -422,4 +374,59 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
             log_type="response",
             payload={"error": str(e)},
             status="error"
-        ) 
+        )
+
+
+# ======================================================================================================================
+# TEST ENDPOINT
+# ======================================================================================================================
+@router.post("/test_whatsapp_api")
+async def send_template_message_endpoint() -> Dict[str, Any]:
+    """
+    Test endpoint - Send a template message to a WhatsApp number
+    This endpoint is isolated and doesn't use the common logging flow
+    """
+    recipient = "14373668209"
+    template_name = "wedding_pre_invite_1"
+    language_code = "en_US"
+
+    # Inline the entire flow for test endpoint
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+    }
+
+    message_data = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {
+                "code": language_code
+            },
+            "components": [{
+                "type": "body",
+                "parameters": [{"type": "text", "text": "Madhav Sharma", "parameter_name": "name"}]
+            }]
+        }
+    }
+
+    url = f"{WHATSAPP_API_BASE_URL}/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=message_data, headers=headers) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    print(f"Test message sent successfully: {response_data}")
+                    return {"status": "success", "data": response_data}
+                else:
+                    print(f"Test message error. Status: {response.status}")
+                    print(f"Response: {response_data}")
+                    return {"status": "error", "code": response.status, "data": response_data}
+
+        except Exception as e:
+            print(f"Test endpoint error: {str(e)}")
+            return {"status": "error", "message": str(e)}
