@@ -326,11 +326,20 @@ function displayGuests() {
     
     guests.forEach(guest => {
         const row = document.createElement('tr');
-        const displayName = [guest.prefix, guest.first_name, guest.last_name].filter(Boolean).join(' ');
         
+        // UI logic for ready checkbox
+        const isSent = guest.sent_to_whatsapp !== 'pending';
+        const readyCheckboxDisabled = isSent || !guest.phone;
+        
+        if (!guest.ready && isSent) {
+            console.error(`Inconsistency Error: Guest ID ${guest.id} is not marked as ready but has been sent to WhatsApp.`);
+        }
+
         row.innerHTML = `
             <td>${guest.id}</td>
-            <td>${displayName}</td>
+            <td>${guest.prefix || ''}</td>
+            <td>${guest.first_name}</td>
+            <td>${guest.last_name}</td>
             <td>${guest.greeting_name || ''}</td>
             <td class="${guest.phone_class || ''}">${formatPhoneForDisplay(guest.phone)}</td>
             <td>${guest.group_id}</td>
@@ -338,14 +347,18 @@ function displayGuests() {
             <td>
                 <input type="checkbox" 
                        ${guest.ready ? 'checked' : ''} 
-                       ${!guest.phone ? 'disabled' : ''}
+                       ${readyCheckboxDisabled ? 'disabled' : ''}
                        onchange="updateReady(${guest.id}, this.checked)"
-                       title="${!guest.phone ? 'Phone number required to mark as ready' : 'Mark as ready for invite'}">
+                       title="${!guest.phone ? 'Phone number required to mark as ready' : (isSent ? 'Already sent' : 'Mark as ready for invite')}">
             </td>
             <td>${guest.sent_to_whatsapp}</td>
+            <td>${formatDateTime(guest.api_call_at)}</td>
             <td>${formatDateTime(guest.sent_at)}</td>
             <td>${formatDateTime(guest.delivered_at)}</td>
             <td>${formatDateTime(guest.read_at)}</td>
+            <td>${guest.message_id || ''}</td>
+            <td>${formatDateTime(guest.created_at)}</td>
+            <td>${formatDateTime(guest.updated_at)}</td>
             <td>
                 <button class="edit-btn" onclick="editGuest(${guest.id})">Edit</button>
             </td>
