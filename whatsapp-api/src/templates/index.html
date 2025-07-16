@@ -19,13 +19,21 @@
                 <h2>Add New Guest</h2>
                 <form id="add-guest-form" class="guest-form">
                     <div class="form-row">
+                        <div class="form-group small">
+                            <label for="prefix">Prefix</label>
+                            <input type="text" id="prefix" name="prefix" 
+                                   placeholder="Mr/Ms/Dr">
+                            <span id="prefix-error" class="error-message"></span>
+                        </div>
                         <div class="form-group">
                             <label for="first_name">First Name*</label>
                             <input type="text" id="first_name" name="first_name" required>
+                            <span id="first-name-error" class="error-message"></span>
                         </div>
                         <div class="form-group">
                             <label for="last_name">Last Name*</label>
                             <input type="text" id="last_name" name="last_name" required>
+                            <span id="last-name-error" class="error-message"></span>
                         </div>
                     </div>
 
@@ -33,7 +41,8 @@
                         <div class="form-group">
                             <label for="greeting_name">Greeting Name</label>
                             <input type="text" id="greeting_name" name="greeting_name" 
-                                   placeholder="Optional custom greeting">
+                                   placeholder="Optional custom greeting (max 60 chars)">
+                            <span id="greeting-error" class="error-message"></span>
                         </div>
                         <div class="form-group">
                             <label for="phone">Phone Number</label>
@@ -47,7 +56,8 @@
                         <div class="form-group">
                             <label for="group_id">Group ID*</label>
                             <input type="text" id="group_id" name="group_id" required
-                                   placeholder="e.g., family-smith">
+                                   placeholder="e.g., familysmith">
+                            <span id="group-id-error" class="error-message"></span>
                         </div>
                         <div class="form-group checkbox-group">
                             <label>
@@ -75,8 +85,7 @@
                         <thead>
                             <tr>
                                 <th>ID</th>
-                                <th>First Name</th>
-                                <th>Last Name</th>
+                                <th>Name</th>
                                 <th>Greeting Name</th>
                                 <th>Phone</th>
                                 <th>Group ID</th>

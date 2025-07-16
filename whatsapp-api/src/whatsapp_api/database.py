@@ -17,14 +17,16 @@ def init_database():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS guests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prefix TEXT,
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL,
                 greeting_name TEXT,
-                phone TEXT,
+                phone TEXT UNIQUE,
                 group_id TEXT NOT NULL,
                 is_group_primary BOOLEAN NOT NULL,
                 ready BOOLEAN NOT NULL DEFAULT FALSE,
                 sent_to_whatsapp TEXT DEFAULT 'pending',
+                api_call_at DATETIME,
                 sent_at DATETIME,
                 delivered_at DATETIME,
                 read_at DATETIME,

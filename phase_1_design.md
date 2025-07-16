@@ -36,10 +36,22 @@ Use SQLAlchemy for DB interactions (declarative models with sessions for CRUD op
 
 ### Validation Strategy
 
-This application separates validation concerns between client and server:
+This application strictly separates validation concerns between client and server:
 
-- **Client-Side Validation**: Format validation only (names contain only letters, phone numbers match E.164 format, group_id contains only lowercase letters). Client-side prevents submission of invalid formats but does not check against database records.
-- **Server-Side Validation**: Business logic validation against database records only (phone number uniqueness, group primary rules, ensuring primaries have phone numbers). Server does not re-validate formats as client ensures proper format.
+- **Client-Side Validation**: ALL format validation (names contain only letters, phone numbers match E.164 format, group_id contains only lowercase letters). Client-side prevents submission of invalid formats but does not check against database records. The submit button is disabled until all format validations pass.
+- **Server-Side Validation**: Business logic validation against database records ONLY (phone number uniqueness, group primary rules, ensuring primaries have phone numbers). Server does NOT re-validate formats - no regex checks, no pattern matching, no string formatting.
+
+**Important**: The server must trust that the client has already validated formats. Server-side code should NOT include:
+- Regex pattern validation
+- String capitalization/formatting
+- Length checks (except database column limits)
+- Character set validation
+- Any format transformation
+
+The only server-side validations are:
+1. Database uniqueness constraints (e.g., phone number already exists)
+2. Business rule validation (e.g., group must have a primary before adding non-primary members)
+3. Required field validation based on other fields (e.g., primary contacts must have phone numbers)
 
 ### Database Schema
 
@@ -120,7 +132,7 @@ class Log(Base):
 - **Main Page**: `/` (GET) - Serves a Jinja template with an HTML structure, including a table placeholder, input fields for adding guests, and buttons. JS script fetches guest data via API (GET /guests), populates the table dynamically, and handles interactions.
 - **Table**: Displays all guests with read-only columns for all fields except Ready (editable checkbox). Names, phone, and group information cannot be modified after creation. Columns: ID, Prefix (if present), First Name, Last Name, Greeting Name, Phone (with color class as per Appendix C; display with human-readable formatting via JS), Group ID, Is Primary (read-only), Ready (editable checkbox with auto-submit via JS as per Appendix B), Sent to WA (text), API Call At (datetime or 'N/A'), Sent At (datetime or 'N/A'), Delivered At (datetime or 'N/A'), Read At (datetime or 'N/A'), Message ID.
 - Rows sorted by group_id then is_group_primary (descending) via JS or API query.
-- **Add Guest**: Input fields (Prefix input with id="prefix-input" and `<span id="prefix-error"></span>`, First Name (with id="first-name-input" and `<span id="first-name-error"></span>` for validation as per Appendix A), Last Name (similar), Greeting Name (similar), Phone (with id="phone-input" and `<span id="phone-error"></span>` for validation as per Appendix C), Group ID (with id="group-id-input" and `<span id="group-id-error"></span>` for validation as per Appendix D), Is Primary checkbox). JS handles "Add Guest" button click: Validates locally (including strict name, phone, and group_id format checks via JS, preventing submission if invalid), sends POST to /guests via fetch if valid, refreshes table on success, shows error message if failed.
+- **Add Guest**: Input fields (Prefix input with id="prefix-input" and `<span id="prefix-error"></span>`, First Name (with id="first-name-input" and `<span id="first-name-error"></span>` for validation as per Appendix A), Last Name (similar), Greeting Name (similar), Phone (with id="phone-input" and `<span id="phone-error"></span>` for validation as per Appendix C), Group ID (with id="group-id-input" and `<span id="group-id-error"></span>` for validation as per Appendix D), Is Primary checkbox). Submit button is disabled until all format validations pass. JS handles "Add Guest" button click: Validates locally (including strict name, phone, and group_id format checks via JS, preventing submission if invalid), sends POST to /guests via fetch if valid, refreshes table on success, shows error message if failed.
 - **Send Invites**: Button triggers JS to call POST /send-invites, then refreshes table.
 - **UX**: Dynamic updates without full page reloads. Use CSS for validation errors (e.g., red borders). Display 'N/A' or empty for NULL timestamps. Inline JS for name sanitization/capitalization, phone debouncing/formatting, group_id validation, and ready auto-submit.
 - **No Bulk Upload**: Addition feels "bulk-like" but is one-at-a-time with context (user sees previous for reference, e.g., to match group_ids).
@@ -131,13 +143,14 @@ class Log(Base):
 - **GET /guests**: Return JSON list of all guests (query via SQLAlchemy session: `session.query(Guest).order_by(Guest.group_id, Guest.is_group_primary.desc()).all()`). Compute phone_class for each guest (as per Appendix C).
 
 - **POST /guests**:
-  - Parse JSON body (prefix, first_name, etc.). Strip any formatting from phone (e.g., remove dashes) before storage.
-  - Server-side business logic validation:
-    - **Phone uniqueness**: Check database for existing phone number (handle IntegrityError if constraint violated)
+  - Parse JSON body (prefix, first_name, etc.). Store phone as-is from client (client already removed formatting).
+  - Server-side business logic validation ONLY:
+    - **Phone uniqueness**: Database constraint enforced (handle IntegrityError if duplicate)
     - **Group primary rules**:
-      - If is_group_primary=True: Ensure no other guests exist with this group_id AND phone number is provided
-      - If is_group_primary=False: Ensure at least one primary already exists for this group_id
-    - **Primary phone requirement**: If is_group_primary=True, phone must not be empty
+      - If is_group_primary=True: Query database to ensure no other guests exist with this group_id AND verify phone is provided
+      - If is_group_primary=False: Query database to ensure at least one primary already exists for this group_id
+    - **Primary phone requirement**: If is_group_primary=True, phone must not be empty/null
+  - NO format validation, NO regex checks, NO string manipulation on server
   - If valid, create Guest instance, add to session, commit. Return 201 Created with guest data on success; 400 with JSON error on failure.
 
 - **POST /send-invites**:
@@ -799,8 +812,8 @@ GET /
 - **500**: Internal Server Error
 
 ### Validation Types
-- **Client-Side**: Format validation (names a-zA-Z, phone E.164, group_id a-z)
-- **Server-Side**: Business logic validation (uniqueness, group rules, required fields)
+- **Client-Side**: ALL format validation (names a-zA-Z only, phone E.164 format, group_id a-z only, greeting name max 60 chars). Submit button disabled until valid.
+- **Server-Side**: Business logic validation ONLY (phone uniqueness via DB constraint, group primary rules via DB queries, primary phone requirement)
 
 ## Data Types
 

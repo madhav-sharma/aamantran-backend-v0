@@ -173,7 +173,7 @@ async def send_invites():
             
             # Get all ready guests who haven't been sent invites
             cursor.execute("""
-                SELECT id, first_name, last_name, greeting_name, phone 
+                SELECT id, prefix, first_name, last_name, greeting_name, phone 
                 FROM guests 
                 WHERE ready = 1 AND sent_to_whatsapp = 'pending' AND phone IS NOT NULL
             """)
@@ -181,12 +181,26 @@ async def send_invites():
             guests_to_send = cursor.fetchall()
             
             for guest in guests_to_send:
-                guest_id, first_name, last_name, greeting_name, phone = guest
+                guest_id, prefix, first_name, last_name, greeting_name, phone = guest
                 
-                # Use greeting name if available, otherwise first name
-                name = greeting_name or first_name
+                # Use greeting name if available, otherwise construct from prefix + first name
+                if greeting_name:
+                    name = greeting_name
+                else:
+                    # Combine prefix and first name if prefix exists
+                    name_parts = [prefix, first_name] if prefix else [first_name]
+                    name = " ".join(name_parts)
                 
                 try:
+                    # Update api_call_at before making the call
+                    cursor.execute("""
+                        UPDATE guests 
+                        SET api_call_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (guest_id,))
+                    conn.commit()
+                    
                     # Send WhatsApp message
                     response = await send_template_message(phone, name, guest_id)
                     

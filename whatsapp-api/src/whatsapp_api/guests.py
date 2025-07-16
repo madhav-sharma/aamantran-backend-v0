@@ -51,13 +51,16 @@ def validate_group_rules(group_id: str, is_primary: bool, conn) -> Optional[str]
     return None
 
 
-def validate_phone_uniqueness(phone: str, conn) -> bool:
+def validate_phone_uniqueness(phone: str, conn, exclude_id: Optional[int] = None) -> bool:
     """Check if phone number is unique"""
     if not phone:
         return True
     
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM guests WHERE phone = ?", (phone,))
+    if exclude_id:
+        cursor.execute("SELECT COUNT(*) FROM guests WHERE phone = ? AND id != ?", (phone, exclude_id))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM guests WHERE phone = ?", (phone,))
     count = cursor.fetchone()[0]
     return count == 0
 
@@ -94,10 +97,11 @@ def create_guest(guest_data: GuestCreate) -> Dict:
         
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO guests (first_name, last_name, greeting_name, phone, 
+            INSERT INTO guests (prefix, first_name, last_name, greeting_name, phone, 
                               group_id, is_group_primary, ready)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
+            guest_data.prefix,
             guest_data.first_name,
             guest_data.last_name,
             guest_data.greeting_name,
@@ -137,6 +141,10 @@ def update_guest(guest_id: int, update_data: GuestUpdate) -> Optional[Dict]:
             updates.append("ready = ?")
             values.append(update_data.ready)
         
+        if update_data.prefix is not None:
+            updates.append("prefix = ?")
+            values.append(update_data.prefix)
+        
         if update_data.first_name is not None:
             updates.append("first_name = ?")
             values.append(update_data.first_name)
@@ -150,8 +158,8 @@ def update_guest(guest_id: int, update_data: GuestUpdate) -> Optional[Dict]:
             values.append(update_data.greeting_name)
             
         if update_data.phone is not None:
-            # Validate phone if provided
-            if update_data.phone and not validate_phone_uniqueness(update_data.phone, conn):
+            # Validate phone uniqueness if provided
+            if update_data.phone and not validate_phone_uniqueness(update_data.phone, conn, exclude_id=guest_id):
                 raise ValueError("Phone number already exists for another guest")
             updates.append("phone = ?")
             values.append(update_data.phone)
