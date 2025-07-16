@@ -3,7 +3,7 @@
 ## Technical Design Document
 
 ### Version
-V1.1 - Updated to incorporate timestamp-based webhook status tracking for sent, delivered, and read.
+V1.2 - Updated to include Appendix A on preserving form data during validation failures.
 
 ### Overview
 This document outlines the technical design for a simple, local Wedding RSVP Management application using a WhatsApp chatbot. The application is designed for a single wedding (not a SaaS product), running on a home PC with no cloud dependencies, auto-scaling, or Docker. It uses FastAPI as the web framework, Jinja templates for the UI, SQLite as the database, and direct integration with the WhatsApp API for messaging. All operations are local, with logging for API interactions stored in the database.
@@ -119,12 +119,12 @@ CREATE TABLE IF NOT EXISTS logs (
 - **PATCH /update-ready/{guest_id}**: (If needed for checkbox updates; else handle via form in table.)
 
 ### Messaging Flow
-- **Pre-Invite Send**: Hard-coded template (out of scope for details; e.g., "Dear {name}, ..."). Send only to guests with phone (primaries required to have one; non-primaries optional).
+- **Pre-Invite Send**: Hard-coded template (out of scope for details; e.g., "Dear {name}, ..."). Send only to guests with phone numbers (primaries required to have one; non-primaries optional).
 - **Webhook Processing**: Background task parses payload, matches via message_id, updates DB timestamps for sent_at, delivered_at, read_at. Store all in logs.
 - **Tracking**: UI table shows timestamps (indicating occurrence); no auto-retries (manual via "Send Invites" button).
 
 ### Security/Edge Cases
-- Local-only: No auth needed (assume single user).
+- Local-only: No auth needed; assume single user.
 - Validation: App-level for all rules to keep DB simple.
 - Errors: Log failures; show in UI if critical.
 - Data Integrity: Unique group_id check on add (query existing).
@@ -142,3 +142,36 @@ CREATE TABLE IF NOT EXISTS logs (
 - Retries/auto-sends.
 - Handling failed webhook statuses (e.g., add failed_at timestamp).
 
+### Appendix A: Preserving Form Data on Validation Failure for 'is_group_primary' and Other Checks
+
+This appendix provides implementation guidance for ensuring that, upon validation failure during the guest addition process (POST to /add-guest), the user's input data is preserved and redisplayed in the form fields. This applies to all validations, including 'is_group_primary' rules (e.g., must be True for new group_id, False for existing with no duplicates per group), as well as others like phone format or required fields. The core design already notes preserving inputs on failure, but this appendix details the approach without altering the main requirements.
+
+#### Rationale
+- Post-submission validation (server-side) can fail due to data-dependent checks (e.g., querying DB for group_id existence). To improve UX, the user should not lose entered data (e.g., names, phone, group_id), avoiding retyping on correction (e.g., unchecking is_group_primary or changing group_id).
+
+#### Implementation Approach
+- **Handle in FastAPI Endpoint** (/add-guest):
+  - Use Pydantic or manual dict to parse form data into a guest_data object/dict.
+  - Perform validations; if any fail (e.g., for is_group_primary_primary'):
+    - Query DB: `cur.execute("SELECT COUNT(*) FROM guests WHERE group_id = ? AND is_group_primary = 1", (group_id,))` to check existing primaries.
+    - If invalid, do NOT insert; instead, prepare to re-render the main template (/) with additional context:
+      - Pass `error_message = "Specific error, e.g., 'Cannot add non-primary to new group; primary must be added first.'"`
+      - Pass `form_data = request.form` or the parsed data dict (e.g., {'first_name': 'John', 'is_group_primary': True, ...}) to the template.
+  - On success, insert and redirect to / (302 Found).
+
+- **Jinja Template Adjustments**:
+  - In the add-row section, use Jinja conditionals to pre-fill inputs from `form_data` if provided:
+    ```jinja
+    <input type="text" name="first_name" value="{{ form_data.first_name if form_data else '' }}">
+    <input type="checkbox" name="is_group_primary" {% if form_data.is_group_primary %}checked{% endif %}>
+    ```
+  - Display error if present: `{% if error_message %}<p style="color: red;">{{ error_message }}</p>{% endif %}` above the add row.
+  - This ensures fields retain values from the failed submission.
+
+- **No JavaScript Required**: Relies on server-side renders and redirects. On failure, render / directly from /add-guest (no redirect), showing updated table with existing guests plus preserved form.
+- **Edge Cases**:
+  - Multiple errors: Collect all validation errors in a list and display as bullet points.
+  - Security: Escape inputs in Jinja to prevent XSS (though local-only).
+  - Testing: Simulate failures (e.g., invalid group_id) to verify data persistence.
+
+This appendix ensures the existing design supports data preservation without changing core flows or introducing new features like client-side validation.
