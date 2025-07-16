@@ -100,7 +100,7 @@ class Guest(Base):
 - `is_group_primary`: Server validates business rules:
   - For new group_id: Must be True (primary added first) and guest must have phone number.
   - For existing group_id: Must be False, and ensure only one True per group_id exists.
-- `ready`: Defaults to False; user sets to True via UI (e.g., checkbox in table).
+- `ready`: Defaults to False; user sets to True via UI (e.g., checkbox in table). The checkbox is disabled (client-side) for guests without phone numbers since invites cannot be sent without a phone number.
 - `sent_to_whatsapp`: Defaults to 'pending'. Updated after API send: 'succeeded' on 200 OK, 'failed' otherwise.
 - `api_call_at`: Set to current timestamp when WhatsApp API call is made.
 - Webhook fields (`sent_at`, `delivered_at`, `read_at`): NULL initially. On webhook processing, set to the timestamp from the webhook (or CURRENT_TIMESTAMP if not provided) when the corresponding status is received.
@@ -131,7 +131,7 @@ class Log(Base):
 ### User Interface (UI)
 
 - **Main Page**: `/` (GET) - Serves a Jinja template with an HTML structure, including a table placeholder, input fields for adding guests, and buttons. JS script fetches guest data via API (GET /guests), populates the table dynamically, and handles interactions.
-- **Table**: Displays all guests with read-only columns for all fields except Ready (editable checkbox). Names, phone, and group information cannot be modified after creation. Columns: ID, Prefix (if present), First Name, Last Name, Greeting Name, Phone (with color class as per Appendix C; display with human-readable formatting via JS), Group ID, Is Primary (read-only), Ready (editable checkbox with auto-submit via JS as per Appendix B), Sent to WA (text), API Call At (datetime or 'N/A'), Sent At (datetime or 'N/A'), Delivered At (datetime or 'N/A'), Read At (datetime or 'N/A'), Message ID.
+- **Table**: Displays all guests with read-only columns for all fields except Ready (editable checkbox). Names, phone, and group information cannot be modified after creation. Columns: ID, Prefix (if present), First Name, Last Name, Greeting Name, Phone (with color class as per Appendix C; display with human-readable formatting via JS), Group ID, Is Primary (read-only), Ready (editable checkbox with auto-submit via JS as per Appendix B; disabled for guests without phone numbers), Sent to WA (text), API Call At (datetime or 'N/A'), Sent At (datetime or 'N/A'), Delivered At (datetime or 'N/A'), Read At (datetime or 'N/A'), Message ID.
 - Rows sorted by group_id then is_group_primary (descending) via JS or API query.
 
 - **Add Guest**: Input fields (Prefix input with id="prefix-input" and `<span id="prefix-error"></span>`, First Name (with id="first-name-input" and `<span id="first-name-error"></span>` for validation as per Appendix A), Last Name (similar), Greeting Name (similar), Phone (with id="phone-input" and `<span id="phone-error"></span>` for validation as per Appendix C), Group ID (with id="group-id-input" and `<span id="group-id-error"></span>` for validation as per Appendix D), Is Primary checkbox). Submit button is disabled until all format validations pass. JS handles "Add Guest" button click: Validates locally (including strict name, phone, and group_id format checks via JS, preventing submission if invalid), sends POST to /guests via fetch if valid, refreshes table on success, shows error message if failed.
@@ -328,9 +328,15 @@ This appendix provides guidance for enhancing the 'ready' field update mechanism
 
 2. **UI Adjustments (JS in Template)**:
    - For each table row's 'ready' column (dynamically generated via JS):
+   - Checkbox is disabled if guest has no phone number (client-side check)
+   - Tooltip shows appropriate message based on phone availability
 
 ```html
-<input type="checkbox" {% if guest.ready %}checked{% endif %} onchange="updateReady({{ guest.id }}, this.checked)">
+<input type="checkbox" 
+       {% if guest.ready %}checked{% endif %} 
+       {% if not guest.phone %}disabled{% endif %}
+       onchange="updateReady({{ guest.id }}, this.checked)"
+       title="{% if not guest.phone %}Phone number required to mark as ready{% else %}Mark as ready for invite{% endif %}">
 ```
 
 JS function:
@@ -355,6 +361,7 @@ No fallback needed since JS is allowed; if JS disabled, feature degrades gracefu
 3. **Edge Cases**:
    - **Concurrent Actions**: Local app handles one user fine.
    - **Testing**: Simulate checkbox change, verify API call and DB update.
+   - **No Phone Number**: Checkbox is disabled client-side for guests without phone numbers, preventing ready status updates for these guests.
 
 This approach keeps the design simple while adding the requested UX improvements.
 

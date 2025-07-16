@@ -338,8 +338,9 @@ function displayGuests() {
             <td>
                 <input type="checkbox" 
                        ${guest.ready ? 'checked' : ''} 
+                       ${!guest.phone ? 'disabled' : ''}
                        onchange="updateReady(${guest.id}, this.checked)"
-                       title="Mark as ready for invite">
+                       title="${!guest.phone ? 'Phone number required to mark as ready' : 'Mark as ready for invite'}">
             </td>
             <td>${guest.sent_to_whatsapp}</td>
             <td>${formatDateTime(guest.sent_at)}</td>
