@@ -3,8 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <title>Wedding RSVP Management</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/style.css">
     <style>
+        .cc-usacan { background-color: lightblue; }
+        .cc-uae { background-color: lightyellow; }
+        .cc-uk { background-color: lightgreen; }
+        .cc-in { background-color: orange; }
+        .cc-other { background-color: lightgray; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
         th { background: #f3f3f3; }
@@ -51,7 +56,7 @@
                 <td>{{ g.first_name }}</td>
                 <td>{{ g.last_name }}</td>
                 <td>{{ g.greeting_name or '' }}</td>
-                <td>{{ g.phone or '' }}</td>
+                <td class="{{ g.phone_class }}">{{ g.phone or '' }}</td>
                 <td>{{ g.group_id }}</td>
                 <td><input type="checkbox" {% if g.is_group_primary %}checked{% endif %} disabled></td>
                 <td>
@@ -72,7 +77,7 @@
                     <td><input name="first_name" type="text" required value="{{ form_data.first_name|e if form_data.first_name is defined else '' }}"></td>
                     <td><input name="last_name" type="text" required value="{{ form_data.last_name|e if form_data.last_name is defined else '' }}"></td>
                     <td><input name="greeting_name" type="text" value="{{ form_data.greeting_name|e if form_data.greeting_name is defined else '' }}"></td>
-                    <td><input name="phone" type="text" value="{{ form_data.phone|e if form_data.phone is defined else '' }}"></td>
+                    <td><input type="text" id="phone-input" name="phone" value="{{ form_data.phone if form_data else '' }}" style="width: 130px;"></td>
                     <td><input name="group_id" type="text" required value="{{ form_data.group_id|e if form_data.group_id is defined else '' }}"></td>
                     <td style="text-align:center"><input name="is_group_primary" type="checkbox" value="true" {% if form_data.is_group_primary %}checked{% endif %}></td>
                     <td></td>
@@ -85,4 +90,35 @@
         </tbody>
     </table>
 </body>
+    <script>
+      function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func(...args), delay);
+        };
+      }
+      function validateAndFormatPhone(input) {
+        let value = input.value.trim();
+        // Auto-format: Add '+' if missing and starts with digit
+        if (value && !value.startsWith('+') && /^\d/.test(value)) {
+          value = '+' + value;
+          input.value = value;
+        }
+        // Validate
+        const regex = /^\+[1-9]\d{1,14}$/;
+        if (value && !regex.test(value)) {
+          input.style.border = '1px solid red';
+        } else {
+          input.style.border = '';
+        }
+      }
+      document.addEventListener('DOMContentLoaded', function() {
+        const phoneInput = document.getElementById('phone-input');
+        if (phoneInput) {
+          const debouncedValidate = debounce(validateAndFormatPhone, 300);
+          phoneInput.addEventListener('input', () => debouncedValidate(phoneInput));
+        }
+      });
+    </script>
 </html>

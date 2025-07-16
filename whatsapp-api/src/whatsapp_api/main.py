@@ -42,8 +42,29 @@ def fetch_guests():
     c = conn.cursor()
     guests = c.execute("SELECT * FROM guests ORDER BY group_id, is_group_primary DESC").fetchall()
     columns = [desc[0] for desc in c.description]
+    country_code_colors = {
+        '1': 'cc-usacan',    # USA/Canada
+        '971': 'cc-uae',    # UAE
+        '44': 'cc-uk',      # UK
+        '91': 'cc-in',      # India
+    }
+    def get_phone_class(phone):
+        if not phone or not phone.startswith('+'):
+            return ''
+        # Try 3, 2, then 1 digit country code
+        for length in (3, 2, 1):
+            prefix = phone[1:1+length]
+            if prefix in country_code_colors:
+                return country_code_colors[prefix]
+        return 'cc-other'
+    guest_dicts = []
+    for row in guests:
+        d = dict(zip(columns, row))
+        d['phone_class'] = get_phone_class(d.get('phone'))
+        guest_dicts.append(d)
     conn.close()
-    return [dict(zip(columns, row)) for row in guests]
+    return guest_dicts
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, error: str = "", form_data: dict = None, errors: list = None):
@@ -196,6 +217,11 @@ async def add_guest(
     # App-level validation
     conn = db.get_connection()
     c = conn.cursor()
+    # Phone uniqueness check
+    if phone:
+        phone_count = c.execute("SELECT COUNT(*) FROM guests WHERE phone = ?", (phone,)).fetchone()[0]
+        if phone_count > 0:
+            errors.append("Phone number already exists for another guest.")
     group_primaries = c.execute("SELECT COUNT(*) FROM guests WHERE group_id = ? AND is_group_primary = 1", (group_id,)).fetchone()[0]
     if is_primary_val and group_primaries > 0:
         errors.append("Primary already exists for this group_id.")
