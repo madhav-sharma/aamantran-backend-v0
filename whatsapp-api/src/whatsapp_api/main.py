@@ -17,8 +17,6 @@ load_dotenv(dotenv_path='/Users/madhavsharma/dotenv/aamantran.env')
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
-AIRTABLE_API_TOKEN = os.getenv("AIRTABLE_API_TOKEN")
-AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 TABLE_NAME = os.getenv("TABLE_NAME")
 
 
@@ -38,6 +36,13 @@ app.mount("/static", StaticFiles(directory="src/static"), name="static")
 
 from . import db
 from .models import GuestIn
+from .rest.api import create_template_message, send_whatsapp_message
+from .rest.webhook import router as whatsapp_router
+from .views.html import router as html_router
+
+# Include routers from sub packages
+app.include_router(whatsapp_router)
+app.include_router(html_router)
 import sqlite3
 
 def fetch_guests():
@@ -76,9 +81,9 @@ async def home(request: Request, error: str = "", form_data: dict = None, errors
     session_form = request.session.get("add_form_data") if hasattr(request, "session") else None
     if session_form and not form_data:
         form_data = session_form
-    # Optionally clear session if no errors (i.e., after successful add)
-    if hasattr(request, "session") and not errors and "add_form_data" in request.session:
-        del request.session["add_form_data"]
+    # Note: Do not clear session data here. The preserved form data will be cleared
+    #       explicitly after a successful guest addition inside add_guest().
+
     return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": error, "form_data": form_data or {}, "errors": errors or []})
 
 @app.get("/webhook")
@@ -242,7 +247,9 @@ async def add_guest(
     """, (first_name, last_name, greeting_name, phone, group_id, int(is_primary_val)))
     conn.commit()
     conn.close()
-    del request.session["add_form_data"]
+    # Clear preserved form data after a successful insert, if any
+    if hasattr(request, "session"):
+        request.session.pop("add_form_data", None)
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/send-invites")
