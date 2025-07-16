@@ -199,8 +199,11 @@ async def handle_webhook(request: Request):
             is_multiple=is_multiple
         )
         
-        # Process webhook based on event type (for now just log)
+        # Process webhook based on event type
         logger.info(f"Received webhook event: {event_type}")
+        
+        # Process status updates and button responses
+        await process_webhook_updates(data)
         
         # Return 200 OK immediately to acknowledge receipt
         return Response(content="OK", status_code=200)
@@ -218,8 +221,8 @@ async def send_invite_to_guest(phone_number: str, guest_name: str, guest_id: int
     try:
         message_data = create_template_message(
             recipient=phone_number,
-            template_name="wedding_pre_invite_1",
-            language_code="en_US",
+            template_name="pre_invite_0",
+            language_code="en",
             components=[
                 {
                     "type": "body",
@@ -287,6 +290,49 @@ async def send_invites_to_ready_guests(background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Error queuing invites: {e}")
         return {"status": "error", "message": str(e)}
+
+
+async def process_webhook_updates(data):
+    """
+    Process webhook data to update guest statuses
+    """
+    from ..db_operations import GuestOperations
+    
+    try:
+        if 'entry' in data and data['entry']:
+            for entry in data['entry']:
+                changes = entry.get('changes', [])
+                for change in changes:
+                    value = change.get('value', {})
+                    
+                    # Handle status updates (sent/delivered/read)
+                    statuses = value.get('statuses', [])
+                    for status in statuses:
+                        message_id = status.get('id')
+                        status_type = status.get('status')
+                        timestamp = int(status.get('timestamp', 0))
+                        
+                        if message_id and status_type:
+                            await GuestOperations.update_guest_status_by_message_id(
+                                message_id, status_type, timestamp
+                            )
+                            logger.info(f"Updated guest status: {status_type} for message {message_id}")
+                    
+                    # Handle button responses
+                    messages = value.get('messages', [])
+                    for message in messages:
+                        if message.get('type') == 'button':
+                            button = message.get('button', {})
+                            if button.get('payload') == 'Send me the invite':
+                                phone = message.get('from')
+                                timestamp = int(message.get('timestamp', 0))
+                                
+                                if phone:
+                                    await GuestOperations.update_guest_button_response(phone, timestamp)
+                                    logger.info(f"Updated button response for phone {phone}")
+                    
+    except Exception as e:
+        logger.error(f"Error processing webhook updates: {str(e)}", exc_info=True)
 
 
 async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_name: str):

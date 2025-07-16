@@ -35,6 +35,7 @@ class GuestResponse(GuestBase):
     sent_at: Optional[datetime]
     delivered_at: Optional[datetime]
     read_at: Optional[datetime]
+    responded_with_button: Optional[datetime]
     message_id: Optional[str]
     created_at: datetime
     updated_at: datetime

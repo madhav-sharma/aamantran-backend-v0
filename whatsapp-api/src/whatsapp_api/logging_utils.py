@@ -2,8 +2,6 @@ import json
 import logging
 import time
 from typing import Optional, Dict, Any
-from datetime import datetime
-import aiosqlite
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +135,8 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
     try:
         from .db_operations import GuestOperations
         
+        print(f"DEBUG: Full webhook payload: {json.dumps(payload, indent=2)}")
+        
         guest_ids = set()
         
         # Extract message IDs and phone numbers from the webhook
@@ -151,9 +151,13 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
                     for status in statuses:
                         message_id = status.get('id')
                         if message_id:
+                            print(f"DEBUG: Searching for message_id in DB: {message_id}")
                             guest = await GuestOperations.get_guest_by_message_id(message_id)
                             if guest:
+                                print(f"DEBUG: Found guest by message_id: {guest.id}")
                                 guest_ids.add(guest.id)
+                            else:
+                                print(f"DEBUG: No guest found for message_id: {message_id}")
                     
                     # Check for incoming messages
                     messages = value.get('messages', [])
@@ -161,17 +165,25 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
                         # Get phone number from incoming message
                         from_number = message.get('from')
                         if from_number:
+                            print(f"DEBUG: Searching for phone number in DB: {from_number}")
                             guest = await GuestOperations.get_guest_by_phone(from_number)
                             if guest:
+                                print(f"DEBUG: Found guest by phone: {guest.id}")
                                 guest_ids.add(guest.id)
+                            else:
+                                print(f"DEBUG: No guest found for phone: {from_number}")
         
         # Determine if multiple guests
         if len(guest_ids) == 0:
+            print("DEBUG: No guests found in webhook payload")
             return (None, False)
         elif len(guest_ids) == 1:
-            return (list(guest_ids)[0], False)
+            guest_id = list(guest_ids)[0]
+            print(f"DEBUG: Single guest found: {guest_id}")
+            return (guest_id, False)
         else:
             # Multiple guests - return None for guest_id
+            print(f"DEBUG: Multiple guests found: {guest_ids}")
             return (None, True)
             
     except Exception as e:

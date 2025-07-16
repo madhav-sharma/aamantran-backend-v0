@@ -24,7 +24,7 @@ class Guest(Base):
     sent_at = Column(DateTime)
     delivered_at = Column(DateTime)
     read_at = Column(DateTime)
-    responded_with_button = Column(Boolean, default=False)
+    responded_with_button = Column(DateTime)
     message_id = Column(String)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

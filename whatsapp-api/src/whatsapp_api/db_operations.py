@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine, func
+from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.future import select
@@ -297,6 +298,51 @@ class GuestOperations:
                 if message_id:
                     guest.message_id = message_id
                 session.flush()
+    
+    @staticmethod
+    async def update_guest_status_by_message_id(message_id: str, status: str, timestamp: int):
+        """Update guest status based on message ID from webhook"""
+        from datetime import datetime
+        
+        async with get_async_db_session() as session:
+            result = await session.execute(
+                select(Guest).where(Guest.message_id == message_id)
+            )
+            guest = result.scalar_one_or_none()
+            
+            if guest:
+                # Convert Unix timestamp to datetime
+                dt = datetime.fromtimestamp(timestamp)
+                
+                if status == 'sent':
+                    guest.sent_at = dt
+                elif status == 'delivered':
+                    guest.delivered_at = dt
+                elif status == 'read':
+                    guest.read_at = dt
+                
+                await session.flush()
+                return guest
+            return None
+    
+    @staticmethod
+    async def update_guest_button_response(phone: str, timestamp: int):
+        """Update guest button response timestamp"""
+        from datetime import datetime
+        
+        async with get_async_db_session() as session:
+            result = await session.execute(
+                select(Guest).where(Guest.phone == phone)
+            )
+            guest = result.scalar_one_or_none()
+            
+            if guest:
+                # Convert Unix timestamp to datetime
+                dt = datetime.fromtimestamp(timestamp)
+                guest.responded_with_button = dt
+                await session.flush()
+                return guest
+            return None
 
 
 class WhatsAppAPICallOperations:

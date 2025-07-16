@@ -351,6 +351,7 @@ function displayGuests() {
             <td>${formatDateTime(guest.sent_at)}</td>
             <td>${formatDateTime(guest.delivered_at)}</td>
             <td>${formatDateTime(guest.read_at)}</td>
+            <td>${formatDateTime(guest.responded_with_button)}</td>
             <td>${guest.message_id || ''}</td>
             <td>${formatDateTime(guest.created_at)}</td>
             <td>${formatDateTime(guest.updated_at)}</td>
