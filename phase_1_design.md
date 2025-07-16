@@ -225,3 +225,91 @@ This appendix provides guidance for enhancing the 'ready' field update mechanism
    - **Testing**: Simulate add failure (e.g., invalid primary), verify preservation; then update a ready checkbox and check add form retains data post-redirect.
 
 This approach keeps the design simple while adding the requested UX improvements. If sessions are undesired, fall back to query params for preservation (append to redirect URL).
+
+### Appendix C: Additional Requirements for Phone Number Handling
+
+This appendix introduces new requirements for phone number management, including uniqueness checks, client-side debounced validation/formatting, and optional UI color-coding based on country codes for existing guests. These enhancements build on the existing design (e.g., phone as E.164 string, required for primaries) without altering core flows. Implementation uses app-level checks for uniqueness, basic inline JavaScript for UI interactions (consistent with prior appendices allowing minimal JS), and server-side logic for colors.
+
+#### 1. Phone Number Uniqueness Check
+- **Requirement**: Ensure no duplicate phone numbers across all guests to prevent errors (e.g., sending invites to the wrong person or webhook mismatches). This is an app-level validation, similar to group_id checks.
+- **Implementation Guidance**:
+  - In the /add-guest POST endpoint:
+    - After parsing form data, query DB: `SELECT COUNT(*) FROM guests WHERE phone = ?` (bind the entered phone).
+    - If count > 0 and phone is not empty, fail validation with error: "Phone number already exists for another guest."
+    - Proceed only if unique (or empty for non-primaries).
+  - Preserve form data on failure (as per Appendix A: use session or context to re-fill inputs).
+  - Edge Cases: Ignore empty phones; case-insensitive? No, treat as exact string match (E.164 is standardized).
+
+#### 2. UI-Level Debounced Typing Check for Formatting and Validation
+- **Requirement**: In the add-guest form's phone input, provide real-time feedback as the user types: auto-format to E.164 (e.g., add '+' if missing), validate as valid E.164, and show errors (e.g., red border or message) without spamming checks. Use debouncing to delay validation until typing pauses (e.g., 300ms).
+- **Implementation Guidance**:
+  - **Client-Side JS**: Include a <script> block in the Jinja template (main page) for minimal inline JS. No external libraries needed.
+    - Define a debounce function:
+      ```javascript
+      function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func(...args), delay);
+        };
+      }
+      ```
+    - Validation function using E.164 regex (/^\+[1-9]\d{1,14}$/):
+      ```javascript
+      function validateAndFormatPhone(input) {
+        let value = input.value.trim();
+        // Auto-format: Add '+' if missing and starts with digit
+        if (value && !value.startsWith('+') && /^\d/.test(value)) {
+          value = '+' + value;
+          input.value = value;
+        }
+        // Validate
+        const regex = /^\+[1-9]\d{1,14}$/;
+        if (value && !regex.test(value)) {
+          input.style.border = '1px solid red';  // Error style
+          // Optional: Show inline error, e.g., via a <span id="phone-error">Invalid E.164 format</span>
+        } else {
+          input.style.border = '';  // Reset
+        }
+      }
+      ```
+    - Attach to input: In the template, for the phone <input id="phone-input" ...>, add onload or inline:
+      ```javascript
+      document.addEventListener('DOMContentLoaded', function() {
+        const phoneInput = document.getElementById('phone-input');
+        const debouncedValidate = debounce(validateAndFormatPhone, 300);
+        phoneInput.addEventListener('input', () => debouncedValidate(phoneInput));
+      });
+      ```
+  - **Server-Side Fallback**: Re-validate on submit (as existing) to ensure integrity.
+  - **UX Notes**: Feedback is visual (e.g., border color); no blocking submit if invalid—error shown post-submit as before. Preserves form data on failure.
+
+#### 3. Color Codes in UI Based on Country Code (for Existing Guests)
+- **Requirement**: If feasible, visually distinguish existing guests in the table by coloring the phone cell (or row) based on the parsed country code from their E.164 phone (e.g., +1 blue for USA/Canada, +971 yellow for UAE, +44 green for UK). This aids quick scanning for international guests. Applicable only to entered users (table rows), not the add form.
+- **Feasibility**: Yes, server-side via Jinja/CSS; no client-side needed. Use a static mapping of country codes to colors (grouped as specified; fallback 'cc-other' for others).
+- **Implementation Guidance**:
+  - **Python Mapping**: In the FastAPI app (e.g., in the GET / endpoint), define a dict for codes to CSS classes/colors:
+    ```python
+    country_code_colors = {
+        '1': 'cc-usacan',    # USA/Canada - e.g., lightblue
+        '971': 'cc-uae',     # UAE - e.g., lightyellow
+        '44': 'cc-uk',       # UK - e.g., lightgreen
+        '91': 'cc-in',       # India - orange
+        # Fallback for others: 'cc-other'
+    }
+    ```
+    - Parse country code: For each guest.phone (if present), extract prefix after '+' (1-3 digits; simple: take until length matches a key, or use regex r'^\+(\d{1,3})').
+    - Pass to Jinja: In guests query, add computed 'phone_class' per row (e.g., country_code_colors.get(prefix, 'cc-other')).
+  - **CSS**: In template (or static file):
+    ```css
+    .cc-usacan { background-color: lightblue; }
+    .cc-uae { background-color: lightyellow; }
+    .cc-uk { background-color: lightgreen; }
+    .cc-in { background-color: orange; }
+    .cc-other { background-color: lightgray; }
+    ```
+  - **Template Update**: For phone column: <td class="{{ guest.phone_class }}">{{ guest.phone }}</td>
+  - **Edge Cases**: No phone? No class. Invalid prefix? Fallback. Colors: Choose accessible (e.g., pastels); optional row coloring via <tr class="{{ guest.phone_class }}">.
+  - **Expansion**: If needed, assign additional codes to 'cc-other'.
+
+These requirements enhance data integrity and UX without complexity; implement sequentially starting with uniqueness.
