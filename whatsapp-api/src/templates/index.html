@@ -30,8 +30,9 @@
                 <th>Is Primary</th>
                 <th>Ready</th>
                 <th>Sent to WA</th>
-                <th>Sent</th>
-                <th>Delivered</th>
+                <th>Sent At</th>
+                <th>Delivered At</th>
+                <th>Read At</th>
                 <th>Message ID</th>
             </tr>
         </thead>
@@ -47,8 +48,9 @@
                 <td><input type="checkbox" {% if g.is_group_primary %}checked{% endif %} disabled></td>
                 <td><input type="checkbox" {% if g.ready %}checked{% endif %} disabled></td>
                 <td>{{ g.sent_to_whatsapp }}</td>
-                <td>{{ 'Yes' if g.sent else 'No' }}</td>
-                <td>{{ 'Yes' if g.delivered else 'No' }}</td>
+                <td>{{ g.sent_at if g.sent_at else 'N/A' }}</td>
+                <td>{{ g.delivered_at if g.delivered_at else 'N/A' }}</td>
+                <td>{{ g.read_at if g.read_at else 'N/A' }}</td>
                 <td>{{ g.message_id or '' }}</td>
             </tr>
             {% endfor %}
