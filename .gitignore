@@ -1,2 +1,5 @@
 *.pyc
 /.idea
+.DS_Store
+whatsapp-api/wedding.db
+whatsapp-api/.DS_Store
