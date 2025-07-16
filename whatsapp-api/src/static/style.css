@@ -201,18 +201,21 @@ h2 {
 
 .table-container {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     font-size: 14px;
+    table-layout: auto;
 }
 
 th, td {
     text-align: left;
     padding: 12px;
     border-bottom: 1px solid #ddd;
+    white-space: nowrap;
 }
 
 th {
