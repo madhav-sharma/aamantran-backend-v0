@@ -296,7 +296,7 @@ function showMessage(message, type) {
 // Fetch and display guests
 async function loadGuests() {
     try {
-        const response = await fetch('/guests');
+        const response = await fetch('/api/guests');
         if (!response.ok) throw new Error('Failed to fetch guests');
         
         guests = await response.json();
@@ -357,7 +357,7 @@ function displayGuests() {
 // Update guest ready status
 async function updateReady(guestId, ready) {
     try {
-        const response = await fetch(`/guests/${guestId}`, {
+        const response = await fetch(`/api/guests/${guestId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ready })
@@ -436,7 +436,7 @@ async function handleAddGuest(event) {
     };
     
     try {
-        const response = await fetch('/guests', {
+        const response = await fetch('/api/guests', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -469,7 +469,7 @@ async function sendInvites() {
     }
     
     try {
-        const response = await fetch('/send-invites', {
+        const response = await fetch('/whatsapp/send-invites-to-ready-guests', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });

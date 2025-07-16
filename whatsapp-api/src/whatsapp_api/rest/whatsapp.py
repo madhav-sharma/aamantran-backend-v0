@@ -1,132 +1,305 @@
 import os
 from typing import Optional, Dict, Any
-import httpx
+import aiohttp
 import logging
-from ..guests import log_api_interaction
+from dotenv import load_dotenv
+from fastapi import APIRouter, Request, Response, BackgroundTasks
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv(dotenv_path='/Users/madhavsharma/dotenv/aamantran.env')
+
 # WhatsApp API configuration
 WHATSAPP_API_BASE_URL = "https://graph.facebook.com"
-WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "v18.0")
+WHATSAPP_API_VERSION = "v23.0"
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")
-WHATSAPP_TEMPLATE_NAME = os.getenv("WHATSAPP_TEMPLATE_NAME")
-WHATSAPP_LANGUAGE_CODE = os.getenv("WHATSAPP_LANGUAGE_CODE", "en")
+WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
+
+router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 
 def create_template_message(
-    phone_number: str,
-    name: str,
-    template_name: str = None,
-    language_code: str = None,
+    recipient: str,
+    template_name: str,
+    language_code: str = "en_US",
+    components: Optional[list] = None
 ) -> Dict[str, Any]:
     """
-    Create a template message payload.
-    """
-    template_name = template_name or WHATSAPP_TEMPLATE_NAME
-    language_code = language_code or WHATSAPP_LANGUAGE_CODE
+    Create a template message payload
 
-    return {
+    Args:
+        recipient: Phone number in international format
+        template_name: Name of the WhatsApp template
+        language_code: Language code for the template (default: "en_US")
+        components: Optional template components (parameters, buttons, etc.)
+
+    Returns:
+        Message payload dictionary
+    """
+    message = {
         "messaging_product": "whatsapp",
-        "to": phone_number,
+        "to": recipient,
         "type": "template",
         "template": {
             "name": template_name,
-            "language": {"code": language_code},
-            "components": [
+            "language": {
+                "code": language_code
+            }
+        }
+    }
+
+    if components:
+        message["template"]["components"] = components
+
+    return message
+
+
+async def send_whatsapp_message(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Send a message via WhatsApp Business API
+
+    Args:
+        data: The message payload as a dictionary
+
+    Returns:
+        Response from the WhatsApp API
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+    }
+
+    url = f"{WHATSAPP_API_BASE_URL}/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=data, headers=headers) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    print(f"Message sent successfully: {response_data}")
+                    return {"status": "success", "data": response_data}
+                else:
+                    print(f"Error sending message. Status: {response.status}")
+                    print(f"Response: {response_data}")
+                    return {"status": "error", "code": response.status, "data": response_data}
+
+        except aiohttp.ClientConnectorError as e:
+            print(f"Connection Error: {str(e)}")
+            return {"status": "error", "message": f"Connection error: {str(e)}"}
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
+
+@router.get("/webhook")
+async def verify_webhook(request: Request):
+    """
+    Webhook verification endpoint for WhatsApp
+    """
+    print(request)
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN:
+        print("Webhook verified successfully!")
+        return Response(content=challenge, media_type="text/plain")
+    else:
+        print("Webhook verification failed!")
+        return Response(content="Forbidden", status_code=403)
+
+
+@router.post("/webhook")
+async def handle_webhook(request: Request):
+    """
+    Handle WhatsApp webhook events
+    """
+    print(request)
+    data = await request.json()
+    print(data)
+    return Response(content="OK", status_code=200)
+
+
+@router.post("/test_whatsapp_api")
+async def send_template_message_endpoint() -> Dict[str, Any]:
+    """
+    Send a template message to a WhatsApp number
+    """
+    recipient = "14373668209"
+    template_name = "hello_world"
+    language_code = "en_US"
+    components = None
+
+    message_data = create_template_message(recipient, template_name, language_code, components)
+    return await send_whatsapp_message(message_data)
+
+
+async def send_invite_to_guest(phone_number: str, guest_name: str):
+    """
+    Background task to send WhatsApp invite to a single guest
+    """
+    phone_number = phone_number[1:] # remove plus sign
+    try:
+        message_data = create_template_message(
+            recipient=phone_number,
+            template_name="wedding_pre_invite",
+            language_code="en",
+            components=[
                 {
                     "type": "body",
-                    "parameters": [{"type": "text", "text": name}],
+                    "parameters": [{"type": "text", "text": guest_name}]
                 }
-            ],
-        },
-    }
-
-
-async def send_whatsapp_message(
-    message_data: Dict[str, Any], guest_id: Optional[int] = None
-) -> Optional[Dict[str, Any]]:
-    """
-    Send a message via WhatsApp API.
-    """
-    url = f"{WHATSAPP_API_BASE_URL}/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
-        "Content-Type": "application/json",
-    }
-
-    # Log the request
-    log_api_interaction(
-        guest_id=guest_id,
-        log_type="request",
-        payload=message_data,
-        status="pending"
-    )
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=message_data)
-            response_data = response.json()
-            
-            # Log the response
-            log_api_interaction(
-                guest_id=guest_id,
-                log_type="response",
-                payload=response_data,
-                status=str(response.status_code)
-            )
-            
-            response.raise_for_status()
-            return response_data
+            ] if guest_name else None
+        )
+        result = await send_whatsapp_message(message_data)
+        logger.info(f"Sent invite to {phone_number}: {result}")
+        return result
     except Exception as e:
-        logger.error(f"Error sending WhatsApp message: {e}")
+        logger.error(f"Failed to send invite to {phone_number}: {str(e)}")
+        raise
+
+
+@router.post("/send-invites-to-ready-guests")
+async def send_invites_to_ready_guests(background_tasks: BackgroundTasks):
+    """
+    Send WhatsApp invites to all guests marked as ready
+    This endpoint triggers background tasks to send messages
+    """
+    try:
+        from ..database import get_db
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Get all ready guests who haven't been sent invites
+            cursor.execute("""
+                SELECT id, prefix, first_name, last_name, greeting_name, phone 
+                FROM guests 
+                WHERE ready = 1 AND sent_to_whatsapp = 'pending' AND phone IS NOT NULL
+            """)
+            
+            guests_to_send = cursor.fetchall()
+            
+            if not guests_to_send:
+                return {"message": "No ready guests to send invites to", "count": 0}
+            
+            # Queue background tasks for each guest
+            for guest in guests_to_send:
+                guest_id, prefix, first_name, last_name, greeting_name, phone = guest
+                
+                # Use greeting name if available, otherwise construct from prefix + first name
+                if greeting_name:
+                    name = greeting_name
+                else:
+                    # Combine prefix and first name if prefix exists
+                    name_parts = [prefix, first_name] if prefix else [first_name]
+                    name = " ".join(name_parts)
+                
+                # Add background task to send invite
+                background_tasks.add_task(
+                    send_invite_with_db_update,
+                    guest_id=guest_id,
+                    phone_number=phone,
+                    guest_name=name
+                )
+            
+            return {
+                "message": "Invite sending initiated",
+                "status": "processing",
+                "queued_count": len(guests_to_send)
+            }
+            
+    except Exception as e:
+        logger.error(f"Error queuing invites: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_name: str):
+    """
+    Send invite and update database status
+    """
+    from ..database import get_db
+    from ..guests import log_api_interaction
+    
+    try:
+        # Update api_call_at before making the call
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE guests 
+                SET api_call_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (guest_id,))
+            conn.commit()
+        
+        # Log the API interaction
+        log_api_interaction(
+            guest_id=guest_id,
+            log_type="request",
+            payload={"phone": phone_number, "name": guest_name},
+            status="pending"
+        )
+        
+        # Send the invite
+        result = await send_invite_to_guest(phone_number, guest_name)
+        
+        # Extract message ID from response if available
+        message_id = None
+        if result.get("status") == "success":
+            message_id = result.get("data", {}).get("messages", [{}])[0].get("id")
+        
+        # Update guest status based on result
+        with get_db() as conn:
+            cursor = conn.cursor()
+            if result.get("status") == "success" and message_id:
+                cursor.execute("""
+                    UPDATE guests 
+                    SET sent_to_whatsapp = 'succeeded', 
+                        message_id = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (message_id, guest_id))
+                logger.info(f"Successfully sent invite to guest {guest_id}")
+            else:
+                cursor.execute("""
+                    UPDATE guests 
+                    SET sent_to_whatsapp = 'failed',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (guest_id,))
+                logger.error(f"Failed to send invite to guest {guest_id}")
+            conn.commit()
+        
+        # Log the response
+        log_api_interaction(
+            guest_id=guest_id,
+            log_type="response",
+            payload=result,
+            status="success" if result.get("status") == "success" else "failed"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error sending invite to guest {guest_id}: {str(e)}")
+        # Update guest status to failed
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE guests 
+                SET sent_to_whatsapp = 'failed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (guest_id,))
+            conn.commit()
+        
         # Log the error
         log_api_interaction(
             guest_id=guest_id,
             log_type="response",
             payload={"error": str(e)},
             status="error"
-        )
-        raise
-
-
-async def send_template_message(
-    phone_number: str, name: str, guest_id: Optional[int] = None
-) -> Optional[Dict[str, Any]]:
-    """
-    Send a template message to a phone number.
-    """
-    message_data = create_template_message(phone_number, name)
-    return await send_whatsapp_message(message_data, guest_id)
-
-
-def process_webhook_data(webhook_data: Dict[str, Any]) -> list:
-    """
-    Process WhatsApp webhook data and extract message statuses.
-    Returns a list of (message_id, status, timestamp) tuples.
-    """
-    statuses = []
-    
-    try:
-        # Handle status updates
-        if "entry" in webhook_data:
-            for entry in webhook_data["entry"]:
-                if "changes" in entry:
-                    for change in entry["changes"]:
-                        if change.get("field") == "messages" and "value" in change:
-                            value = change["value"]
-                            
-                            # Handle message status updates
-                            if "statuses" in value:
-                                for status in value["statuses"]:
-                                    message_id = status.get("id")
-                                    status_type = status.get("status")
-                                    timestamp = status.get("timestamp")
-                                    
-                                    if message_id and status_type:
-                                        statuses.append((message_id, status_type, timestamp))
-    except Exception as e:
-        logger.error(f"Error processing webhook data: {e}")
-    
-    return statuses 
+        ) 
