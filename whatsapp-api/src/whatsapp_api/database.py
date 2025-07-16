@@ -37,18 +37,6 @@ def init_database():
             )
         """)
         
-        # Create logs table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guest_id INTEGER,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                type TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                status TEXT,
-                is_multiple BOOLEAN DEFAULT FALSE
-            )
-        """)
         
         # Create WhatsApp API calls table
         cursor.execute("""
@@ -73,10 +61,13 @@ def init_database():
             CREATE TABLE IF NOT EXISTS webhook_payloads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                guest_id INTEGER,
                 event_type VARCHAR(50),
                 payload TEXT,
                 headers TEXT,
-                processed BOOLEAN DEFAULT 0
+                processed BOOLEAN DEFAULT 0,
+                is_multiple BOOLEAN DEFAULT 0,
+                FOREIGN KEY (guest_id) REFERENCES guests(id)
             )
         """)
         
@@ -87,6 +78,7 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_api_calls_guest_id ON whatsapp_api_calls(guest_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_webhooks_timestamp ON webhook_payloads(timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_webhooks_event_type ON webhook_payloads(event_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_webhooks_guest_id ON webhook_payloads(guest_id)")
         
         conn.commit()
         logger.info("Database initialized successfully")

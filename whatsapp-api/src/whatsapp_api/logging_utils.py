@@ -68,7 +68,9 @@ async def log_webhook_payload(
     db_path: str,
     event_type: str,
     payload: Dict[str, Any],
-    headers: Dict[str, Any]
+    headers: Dict[str, Any],
+    guest_id: Optional[int] = None,
+    is_multiple: bool = False
 ):
     """
     Log webhook payloads to the database
@@ -82,18 +84,25 @@ async def log_webhook_payload(
         async with aiosqlite.connect(db_path) as db:
             await db.execute("""
                 INSERT INTO webhook_payloads 
-                (event_type, payload, headers, processed)
-                VALUES (?, ?, ?, ?)
+                (guest_id, event_type, payload, headers, processed, is_multiple)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
+                guest_id,
                 event_type,
                 json.dumps(payload, indent=2),
                 json.dumps(safe_headers, indent=2),
-                0  # Not processed by default
+                0,  # Not processed by default
+                is_multiple
             ))
             await db.commit()
             
         # Log to Python logger
-        logger.info(f"Webhook received - Event Type: {event_type}")
+        log_msg = f"Webhook received - Event Type: {event_type}"
+        if guest_id:
+            log_msg += f", Guest ID: {guest_id}"
+        if is_multiple:
+            log_msg += " (Multiple guests)"
+        logger.info(log_msg)
         logger.debug(f"Webhook Payload: {json.dumps(payload, indent=2)}")
         
     except Exception as e:
@@ -127,6 +136,66 @@ def extract_webhook_event_type(payload: Dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Failed to extract webhook event type: {str(e)}")
         return 'error'
+
+
+async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any]) -> tuple[Optional[int], bool]:
+    """
+    Extract guest_id from webhook payload by looking up message_id or phone number
+    Returns (guest_id, is_multiple)
+    """
+    try:
+        guest_ids = set()
+        
+        # Extract message IDs and phone numbers from the webhook
+        if 'entry' in payload and payload['entry']:
+            for entry in payload['entry']:
+                changes = entry.get('changes', [])
+                for change in changes:
+                    value = change.get('value', {})
+                    
+                    # Check for status updates (sent/delivered/read)
+                    statuses = value.get('statuses', [])
+                    for status in statuses:
+                        message_id = status.get('id')
+                        if message_id:
+                            async with aiosqlite.connect(db_path) as db:
+                                cursor = await db.execute(
+                                    "SELECT id FROM guests WHERE message_id = ?", 
+                                    (message_id,)
+                                )
+                                result = await cursor.fetchone()
+                                if result:
+                                    guest_ids.add(result[0])
+                    
+                    # Check for incoming messages
+                    messages = value.get('messages', [])
+                    for message in messages:
+                        # Get phone number from incoming message
+                        from_number = message.get('from')
+                        if from_number:
+                            # Add + prefix for database lookup
+                            phone_with_plus = f"+{from_number}"
+                            async with aiosqlite.connect(db_path) as db:
+                                cursor = await db.execute(
+                                    "SELECT id FROM guests WHERE phone = ?", 
+                                    (phone_with_plus,)
+                                )
+                                result = await cursor.fetchone()
+                                if result:
+                                    guest_ids.add(result[0])
+        
+        # Determine if multiple guests
+        if len(guest_ids) == 0:
+            return (None, False)
+        elif len(guest_ids) == 1:
+            return (list(guest_ids)[0], False)
+        else:
+            # Multiple guests - return None for guest_id
+            return (None, True)
+            
+    except Exception as e:
+        logger.error(f"Failed to extract guest info from webhook: {str(e)}")
+        return (None, False)
 
 
 class APICallTimer:

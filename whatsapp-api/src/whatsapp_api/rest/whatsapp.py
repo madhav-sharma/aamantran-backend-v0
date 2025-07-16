@@ -5,7 +5,7 @@ import logging
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Response, BackgroundTasks
 from fastapi.responses import JSONResponse
-from ..logging_utils import log_whatsapp_api_call, log_webhook_payload, extract_webhook_event_type, APICallTimer
+from ..logging_utils import log_whatsapp_api_call, log_webhook_payload, extract_webhook_event_type, extract_guest_info_from_webhook, APICallTimer
 
 logger = logging.getLogger(__name__)
 
@@ -186,12 +186,17 @@ async def handle_webhook(request: Request):
         # Extract event type
         event_type = extract_webhook_event_type(data)
         
-        # Log webhook payload
+        # Extract guest information
+        guest_id, is_multiple = await extract_guest_info_from_webhook(db_path, data)
+        
+        # Log webhook payload with guest association
         await log_webhook_payload(
             db_path=db_path,
             event_type=event_type,
             payload=data,
-            headers=headers
+            headers=headers,
+            guest_id=guest_id,
+            is_multiple=is_multiple
         )
         
         # Process webhook based on event type (for now just log)
@@ -295,7 +300,6 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
     Send invite and update database status
     """
     from ..database import get_db
-    from ..guests import log_api_interaction
     
     try:
         # Update api_call_at before making the call
@@ -308,14 +312,6 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
                 WHERE id = ?
             """, (guest_id,))
             conn.commit()
-        
-        # Log the API interaction
-        log_api_interaction(
-            guest_id=guest_id,
-            log_type="request",
-            payload={"phone": phone_number, "name": guest_name},
-            status="pending"
-        )
         
         # Send the invite
         result = await send_invite_to_guest(phone_number, guest_name, guest_id=guest_id)
@@ -347,14 +343,6 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
                 logger.error(f"Failed to send invite to guest {guest_id}")
             conn.commit()
         
-        # Log the response
-        log_api_interaction(
-            guest_id=guest_id,
-            log_type="response",
-            payload=result,
-            status="success" if result.get("status") == "success" else "failed"
-        )
-        
     except Exception as e:
         logger.error(f"Error sending invite to guest {guest_id}: {str(e)}")
         # Update guest status to failed
@@ -367,14 +355,6 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
                 WHERE id = ?
             """, (guest_id,))
             conn.commit()
-        
-        # Log the error
-        log_api_interaction(
-            guest_id=guest_id,
-            log_type="response",
-            payload={"error": str(e)},
-            status="error"
-        )
 
 
 # ======================================================================================================================

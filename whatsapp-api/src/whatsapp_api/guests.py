@@ -150,19 +150,4 @@ def update_guest(guest_id: int, update_data: GuestUpdate) -> Optional[Dict]:
         return guest
 
 
-def log_api_interaction(guest_id: Optional[int], log_type: str, payload: dict, 
-                       status: Optional[str] = None, is_multiple: bool = False):
-    """Log WhatsApp API interactions"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO logs (guest_id, type, payload, status, is_multiple)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            guest_id,
-            log_type,
-            json.dumps(payload),
-            status,
-            is_multiple
-        ))
-        conn.commit() 
+ 
