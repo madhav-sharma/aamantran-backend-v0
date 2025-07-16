@@ -2,13 +2,17 @@ import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .database import init_database
+from .db_operations import init_database
 from .rest.whatsapp import router as whatsapp_router
 from .rest.crud import router as crud_router
 from .pages.guests import router as guests_page_router
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Wedding RSVP Management")

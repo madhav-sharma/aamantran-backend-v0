@@ -24,28 +24,24 @@ async def log_whatsapp_api_call(
     Log WhatsApp API calls to the database
     """
     try:
+        from .db_operations import WhatsAppAPICallOperations
+        
         # Remove sensitive data from headers before logging
         safe_headers = headers.copy()
         if 'Authorization' in safe_headers:
             safe_headers['Authorization'] = 'Bearer [REDACTED]'
         
-        async with aiosqlite.connect(db_path) as db:
-            await db.execute("""
-                INSERT INTO whatsapp_api_calls 
-                (guest_id, direction, method, url, headers, payload, status_code, response_time_ms, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                guest_id,
-                direction,
-                method,
-                url,
-                json.dumps(safe_headers, indent=2),
-                json.dumps(payload, indent=2) if payload else None,
-                status_code,
-                response_time_ms,
-                error_message
-            ))
-            await db.commit()
+        await WhatsAppAPICallOperations.create_api_call(
+            guest_id=guest_id,
+            direction=direction,
+            method=method,
+            url=url,
+            headers=json.dumps(safe_headers, indent=2),
+            payload=json.dumps(payload, indent=2) if payload else None,
+            status_code=status_code,
+            response_time_ms=response_time_ms,
+            error_message=error_message
+        )
             
         # Also log to Python logger for immediate visibility
         log_message = f"WhatsApp API {direction} - Method: {method}, URL: {url}"
@@ -61,7 +57,7 @@ async def log_whatsapp_api_call(
             logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
             
     except Exception as e:
-        logger.error(f"Failed to log WhatsApp API call: {str(e)}")
+        logger.error(f"Failed to log WhatsApp API call: {str(e)}", exc_info=True)
 
 
 async def log_webhook_payload(
@@ -76,25 +72,20 @@ async def log_webhook_payload(
     Log webhook payloads to the database
     """
     try:
+        from .db_operations import WebhookPayloadOperations
+        
         # Remove sensitive headers
         safe_headers = headers.copy()
         if 'X-Hub-Signature-256' in safe_headers:
             safe_headers['X-Hub-Signature-256'] = '[REDACTED]'
             
-        async with aiosqlite.connect(db_path) as db:
-            await db.execute("""
-                INSERT INTO webhook_payloads 
-                (guest_id, event_type, payload, headers, processed, is_multiple)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                guest_id,
-                event_type,
-                json.dumps(payload, indent=2),
-                json.dumps(safe_headers, indent=2),
-                0,  # Not processed by default
-                is_multiple
-            ))
-            await db.commit()
+        await WebhookPayloadOperations.create_webhook_payload(
+            event_type=event_type,
+            payload=json.dumps(payload, indent=2),
+            headers=json.dumps(safe_headers, indent=2),
+            guest_id=guest_id,
+            is_multiple=is_multiple
+        )
             
         # Log to Python logger
         log_msg = f"Webhook received - Event Type: {event_type}"
@@ -106,7 +97,7 @@ async def log_webhook_payload(
         logger.debug(f"Webhook Payload: {json.dumps(payload, indent=2)}")
         
     except Exception as e:
-        logger.error(f"Failed to log webhook payload: {str(e)}")
+        logger.error(f"Failed to log webhook payload: {str(e)}", exc_info=True)
 
 
 def extract_webhook_event_type(payload: Dict[str, Any]) -> str:
@@ -134,7 +125,7 @@ def extract_webhook_event_type(payload: Dict[str, Any]) -> str:
                     
         return 'unknown'
     except Exception as e:
-        logger.error(f"Failed to extract webhook event type: {str(e)}")
+        logger.error(f"Failed to extract webhook event type: {str(e)}", exc_info=True)
         return 'error'
 
 
@@ -144,6 +135,8 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
     Returns (guest_id, is_multiple)
     """
     try:
+        from .db_operations import GuestOperations
+        
         guest_ids = set()
         
         # Extract message IDs and phone numbers from the webhook
@@ -158,14 +151,9 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
                     for status in statuses:
                         message_id = status.get('id')
                         if message_id:
-                            async with aiosqlite.connect(db_path) as db:
-                                cursor = await db.execute(
-                                    "SELECT id FROM guests WHERE message_id = ?", 
-                                    (message_id,)
-                                )
-                                result = await cursor.fetchone()
-                                if result:
-                                    guest_ids.add(result[0])
+                            guest = await GuestOperations.get_guest_by_message_id(message_id)
+                            if guest:
+                                guest_ids.add(guest.id)
                     
                     # Check for incoming messages
                     messages = value.get('messages', [])
@@ -173,14 +161,9 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
                         # Get phone number from incoming message
                         from_number = message.get('from')
                         if from_number:
-                            async with aiosqlite.connect(db_path) as db:
-                                cursor = await db.execute(
-                                    "SELECT id FROM guests WHERE phone = ?", 
-                                    (from_number,)
-                                )
-                                result = await cursor.fetchone()
-                                if result:
-                                    guest_ids.add(result[0])
+                            guest = await GuestOperations.get_guest_by_phone(from_number)
+                            if guest:
+                                guest_ids.add(guest.id)
         
         # Determine if multiple guests
         if len(guest_ids) == 0:
@@ -192,7 +175,7 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
             return (None, True)
             
     except Exception as e:
-        logger.error(f"Failed to extract guest info from webhook: {str(e)}")
+        logger.error(f"Failed to extract guest info from webhook: {str(e)}", exc_info=True)
         return (None, False)
 
 

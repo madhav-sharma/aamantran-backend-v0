@@ -75,7 +75,7 @@ async def send_whatsapp_message(data: Dict[str, Any], guest_id: int) -> Dict[str
 
     url = f"{WHATSAPP_API_BASE_URL}/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
 
-    from ..database import get_db_path
+    from ..db_operations import get_db_path
     db_path = get_db_path()
     
     # Log the API request
@@ -176,7 +176,7 @@ async def handle_webhook(request: Request):
     Handle WhatsApp webhook events
     """
     try:
-        from ..database import get_db_path
+        from ..db_operations import get_db_path
         db_path = get_db_path()
         
         # Get webhook data
@@ -206,7 +206,7 @@ async def handle_webhook(request: Request):
         return Response(content="OK", status_code=200)
         
     except Exception as e:
-        logger.error(f"Error handling webhook: {str(e)}")
+        logger.error(f"Error handling webhook: {str(e)}", exc_info=True)
         # Still return 200 to prevent retries from WhatsApp
         return Response(content="OK", status_code=200)
 
@@ -246,48 +246,43 @@ async def send_invites_to_ready_guests(background_tasks: BackgroundTasks):
     This endpoint triggers background tasks to send messages
     """
     try:
-        from ..database import get_db
+        from ..db_operations import GuestOperations
         
-        with get_db() as conn:
-            cursor = conn.cursor()
+        guests_to_send = GuestOperations.get_ready_guests_for_whatsapp()
+        
+        if not guests_to_send:
+            return {"message": "No ready guests to send invites to", "count": 0}
+        
+        # Queue background tasks for each guest
+        for guest in guests_to_send:
+            guest_id = guest['id']
+            prefix = guest['prefix']
+            first_name = guest['first_name']
+            last_name = guest['last_name']
+            greeting_name = guest['greeting_name']
+            phone = guest['phone']
             
-            # Get all ready guests who haven't been sent invites
-            cursor.execute("""
-                SELECT id, prefix, first_name, last_name, greeting_name, phone 
-                FROM guests 
-                WHERE ready = 1 AND sent_to_whatsapp = 'pending' AND phone IS NOT NULL
-            """)
+            # Use greeting name if available, otherwise construct from prefix + first name
+            if greeting_name:
+                name = greeting_name
+            else:
+                # Combine prefix with the full name if prefix exists
+                name_parts = [prefix, first_name, last_name] if prefix else [first_name, last_name]
+                name = " ".join(name_parts)
             
-            guests_to_send = cursor.fetchall()
-            
-            if not guests_to_send:
-                return {"message": "No ready guests to send invites to", "count": 0}
-            
-            # Queue background tasks for each guest
-            for guest in guests_to_send:
-                guest_id, prefix, first_name, last_name, greeting_name, phone = guest
-                
-                # Use greeting name if available, otherwise construct from prefix + first name
-                if greeting_name:
-                    name = greeting_name
-                else:
-                    # Combine prefix with the full name if prefix exists
-                    name_parts = [prefix, first_name, last_name] if prefix else [first_name, last_name]
-                    name = " ".join(name_parts)
-                
-                # Add background task to send invite
-                background_tasks.add_task(
-                    send_invite_with_db_update,
-                    guest_id=guest_id,
-                    phone_number=phone,
-                    guest_name=name
-                )
-            
-            return {
-                "message": "Invite sending initiated",
-                "status": "processing",
-                "queued_count": len(guests_to_send)
-            }
+            # Add background task to send invite
+            background_tasks.add_task(
+                send_invite_with_db_update,
+                guest_id=guest_id,
+                phone_number=phone,
+                guest_name=name
+            )
+        
+        return {
+            "message": "Invite sending initiated",
+            "status": "processing",
+            "queued_count": len(guests_to_send)
+        }
             
     except Exception as e:
         logger.error(f"Error queuing invites: {e}")
@@ -298,19 +293,11 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
     """
     Send invite and update database status
     """
-    from ..database import get_db
+    from ..db_operations import GuestOperations
     
     try:
         # Update api_call_at before making the call
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE guests 
-                SET api_call_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (guest_id,))
-            conn.commit()
+        GuestOperations.update_guest_api_call_time(guest_id)
         
         # Send the invite
         result = await send_invite_to_guest(phone_number, guest_name, guest_id=guest_id)
@@ -321,39 +308,17 @@ async def send_invite_with_db_update(guest_id: int, phone_number: str, guest_nam
             message_id = result.get("data", {}).get("messages", [{}])[0].get("id")
         
         # Update guest status based on result
-        with get_db() as conn:
-            cursor = conn.cursor()
-            if result.get("status") == "success" and message_id:
-                cursor.execute("""
-                    UPDATE guests 
-                    SET sent_to_whatsapp = 'succeeded', 
-                        message_id = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (message_id, guest_id))
-                logger.info(f"Successfully sent invite to guest {guest_id}")
-            else:
-                cursor.execute("""
-                    UPDATE guests 
-                    SET sent_to_whatsapp = 'failed',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (guest_id,))
-                logger.error(f"Failed to send invite to guest {guest_id}")
-            conn.commit()
+        if result.get("status") == "success" and message_id:
+            GuestOperations.update_guest_whatsapp_status(guest_id, 'succeeded', message_id)
+            logger.info(f"Successfully sent invite to guest {guest_id}")
+        else:
+            GuestOperations.update_guest_whatsapp_status(guest_id, 'failed')
+            logger.error(f"Failed to send invite to guest {guest_id}")
         
     except Exception as e:
         logger.error(f"Error sending invite to guest {guest_id}: {str(e)}")
         # Update guest status to failed
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE guests 
-                SET sent_to_whatsapp = 'failed',
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (guest_id,))
-            conn.commit()
+        GuestOperations.update_guest_whatsapp_status(guest_id, 'failed')
 
 
 # ======================================================================================================================
