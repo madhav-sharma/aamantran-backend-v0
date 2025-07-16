@@ -447,7 +447,7 @@ function validateAndFormatPhone(input, isImmediate = false) {
             isPhoneValid = true;
             formatted = '+971-' + cleanValue.slice(4, 6) + '-' + cleanValue.slice(6, 9) + '-' + cleanValue.slice(9); // e.g., +971-XX-XXX-XXXX
         } else if (cleanValue) {
-            errorMessage = 'Not a valid phone number (must be Indian +91 with 10 digits or UAE +971 with 9 digits)';
+            errorMessage = 'Invalid phone number format';
             isPhoneValid = false;
         } else {
             isPhoneValid = false; // Empty is invalid for submission if required
