@@ -22,7 +22,10 @@ AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 TABLE_NAME = os.getenv("TABLE_NAME")
 
 
+from starlette.middleware.sessions import SessionMiddleware
+
 app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key="local_secret")
 
 # Set up Jinja templates (points to "templates" folder)
 templates = Jinja2Templates(directory="src/templates")
@@ -45,6 +48,13 @@ def fetch_guests():
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, error: str = "", form_data: dict = None, errors: list = None):
     guests = fetch_guests()
+    # Check session for preserved add form data
+    session_form = request.session.get("add_form_data") if hasattr(request, "session") else None
+    if session_form and not form_data:
+        form_data = session_form
+    # Optionally clear session if no errors (i.e., after successful add)
+    if hasattr(request, "session") and not errors and "add_form_data" in request.session:
+        del request.session["add_form_data"]
     return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "error": error, "form_data": form_data or {}, "errors": errors or []})
 
 @app.get("/webhook")
@@ -180,6 +190,7 @@ async def add_guest(
         )
     except Exception as e:
         errors.append(str(e))
+        request.session["add_form_data"] = form_data
         guests = fetch_guests()
         return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "form_data": form_data, "errors": errors})
     # App-level validation
@@ -191,6 +202,7 @@ async def add_guest(
     if not is_primary_val and group_primaries == 0:
         errors.append("Primary must be added first for a new group_id.")
     if errors:
+        request.session["add_form_data"] = form_data
         conn.close()
         guests = fetch_guests()
         return templates.TemplateResponse("index.html", {"request": request, "guests": guests, "form_data": form_data, "errors": errors})
@@ -201,11 +213,29 @@ async def add_guest(
     """, (first_name, last_name, greeting_name, phone, group_id, int(is_primary_val)))
     conn.commit()
     conn.close()
+    del request.session["add_form_data"]
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/send-invites")
 async def send_invites(request: Request):
     # Stub for now: just redirect
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/update-ready/{guest_id}")
+async def update_ready(request: Request, guest_id: int):
+    form = await request.form()
+    ready_val = 1 if form.get("ready") == "on" else 0
+    # Validate guest exists
+    conn = db.get_connection()
+    c = conn.cursor()
+    exists = c.execute("SELECT 1 FROM guests WHERE id = ?", (guest_id,)).fetchone()
+    if exists:
+        c.execute("UPDATE guests SET ready = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (ready_val, guest_id))
+        conn.commit()
+    conn.close()
+    # Preserve add_form_data in session if present
+    if hasattr(request, "session") and "add_form_data" in request.session:
+        pass  # Already preserved
     return RedirectResponse(url="/", status_code=303)
 
 

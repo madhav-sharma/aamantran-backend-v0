@@ -54,7 +54,11 @@
                 <td>{{ g.phone or '' }}</td>
                 <td>{{ g.group_id }}</td>
                 <td><input type="checkbox" {% if g.is_group_primary %}checked{% endif %} disabled></td>
-                <td><input type="checkbox" {% if g.ready %}checked{% endif %} disabled></td>
+                <td>
+                    <form method="POST" action="/update-ready/{{ g.id }}" style="margin:0;display:inline;">
+                        <input type="checkbox" name="ready" {% if g.ready %}checked{% endif %} onchange="this.form.submit()">
+                    </form>
+                </td>
                 <td>{{ g.sent_to_whatsapp }}</td>
                 <td>{{ g.sent_at if g.sent_at else 'N/A' }}</td>
                 <td>{{ g.delivered_at if g.delivered_at else 'N/A' }}</td>
