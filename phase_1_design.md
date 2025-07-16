@@ -241,9 +241,9 @@ This appendix introduces new requirements for phone number management, including
   - Edge Cases: Ignore empty phones; case-insensitive? No, treat as exact string match (E.164 is standardized).
 
 #### 2. UI-Level Debounced Typing Check for Formatting and Validation
-- **Requirement**: In the add-guest form's phone input, provide real-time feedback as the user types: auto-format to E.164 (e.g., add '+' if missing), validate as valid E.164, and show errors (e.g., red border or message) without spamming checks. Use debouncing to delay validation until typing pauses (e.g., 300ms).
+- **Requirement**: In the add-guest form's phone input, provide real-time feedback as the user types: auto-format to E.164 (e.g., add '+' if missing), validate as valid E.164 restricted to Indian (+91, 10 digits) or UAE (+971, 9 digits) numbers only, show errors (e.g., red border and inline pop-up message like "Not a valid phone number" if invalid, including if it doesn't start with '+'), without spamming checks. Use debouncing to delay validation until typing pauses (e.g., 300ms). On valid input, apply human-readable formatting in the input field (e.g., +91-XXXXX-XXXXX for India, +971-XX-XXX-XXXX for UAE) while storing as E.164.
 - **Implementation Guidance**:
-  - **Client-Side JS**: Include a <script> block in the Jinja template (main page) for minimal inline JS. No external libraries needed.
+  - **Client-Side JS**: Include a <script> block in the Jinja template (main page) for minimal inline JS. No external libraries needed. Assume an inline error span next to the input: <span id="phone-error"></span>.
     - Define a debounce function:
       ```javascript
       function debounce(func, delay) {
@@ -254,22 +254,38 @@ This appendix introduces new requirements for phone number management, including
         };
       }
       ```
-    - Validation function using E.164 regex (/^\+[1-9]\d{1,14}$/):
+    - Validation and formatting function:
       ```javascript
       function validateAndFormatPhone(input) {
-        let value = input.value.trim();
+        let value = input.value.trim().replace(/[^+\d]/g, '');  // Strip non-digits except +
+        const errorSpan = document.getElementById('phone-error');
+        
         // Auto-format: Add '+' if missing and starts with digit
         if (value && !value.startsWith('+') && /^\d/.test(value)) {
           value = '+' + value;
-          input.value = value;
         }
-        // Validate
-        const regex = /^\+[1-9]\d{1,14}$/;
-        if (value && !regex.test(value)) {
+        
+        // Restrict to India (+91, 10 digits) or UAE (+971, 9 digits)
+        let isValid = false;
+        let formatted = value;
+        if (value.startsWith('+91') && value.length === 13) {  // +91 + 10 digits
+          isValid = true;
+          formatted = '+91-' + value.slice(3,8) + '-' + value.slice(8);  // e.g., +91-XXXXX-XXXXX
+        } else if (value.startsWith('+971') && value.length === 13) {  // +971 + 9 digits
+          isValid = true;
+          formatted = '+971-' + value.slice(4,6) + '-' + value.slice(6,9) + '-' + value.slice(9);  // e.g., +971-XX-XXX-XXXX
+        }
+        
+        if (value && !isValid) {
           input.style.border = '1px solid red';  // Error style
-          // Optional: Show inline error, e.g., via a <span id="phone-error">Invalid E.164 format</span>
+          errorSpan.textContent = 'Not a valid phone number (must be Indian +91 or UAE +971 in E.164 format)';  // Inline "pop-up" message
+          errorSpan.style.color = 'red';
         } else {
           input.style.border = '';  // Reset
+          errorSpan.textContent = '';
+          if (isValid) {
+            input.value = formatted;  // Apply human-readable format to input
+          }
         }
       }
       ```
@@ -281,8 +297,8 @@ This appendix introduces new requirements for phone number management, including
         phoneInput.addEventListener('input', () => debouncedValidate(phoneInput));
       });
       ```
-  - **Server-Side Fallback**: Re-validate on submit (as existing) to ensure integrity.
-  - **UX Notes**: Feedback is visual (e.g., border color); no blocking submit if invalid—error shown post-submit as before. Preserves form data on failure.
+  - **Server-Side Fallback**: Re-validate on submit (as existing, but add checks for +91/10 digits or +971/9 digits) to ensure integrity. Strip formatting dashes before storage.
+  - **UX Notes**: Feedback is visual (e.g., border color and inline message acting as a "pop-up"); no blocking submit if invalid—error shown post-submit as before. Preserves form data on failure. Human display applied only in UI; store as plain E.164.
 
 #### 3. Color Codes in UI Based on Country Code (for Existing Guests)
 - **Requirement**: If feasible, visually distinguish existing guests in the table by coloring the phone cell (or row) based on the parsed country code from their E.164 phone (e.g., +1 blue for USA/Canada, +971 yellow for UAE, +44 green for UK). This aids quick scanning for international guests. Applicable only to entered users (table rows), not the add form.
