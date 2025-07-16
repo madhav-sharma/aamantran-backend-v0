@@ -133,43 +133,13 @@ def update_guest(guest_id: int, update_data: GuestUpdate) -> Optional[Dict]:
         if not existing:
             return None
         
-        # Build update query dynamically
-        updates = []
-        values = []
-        
+        # Only ready field can be updated (as per design document)
         if update_data.ready is not None:
-            updates.append("ready = ?")
-            values.append(update_data.ready)
-        
-        if update_data.prefix is not None:
-            updates.append("prefix = ?")
-            values.append(update_data.prefix)
-        
-        if update_data.first_name is not None:
-            updates.append("first_name = ?")
-            values.append(update_data.first_name)
-            
-        if update_data.last_name is not None:
-            updates.append("last_name = ?")
-            values.append(update_data.last_name)
-            
-        if update_data.greeting_name is not None:
-            updates.append("greeting_name = ?")
-            values.append(update_data.greeting_name)
-            
-        if update_data.phone is not None:
-            # Validate phone uniqueness if provided
-            if update_data.phone and not validate_phone_uniqueness(update_data.phone, conn, exclude_id=guest_id):
-                raise ValueError("Phone number already exists for another guest")
-            updates.append("phone = ?")
-            values.append(update_data.phone)
-        
-        if updates:
-            updates.append("updated_at = CURRENT_TIMESTAMP")
-            values.append(guest_id)
-            
-            query = f"UPDATE guests SET {', '.join(updates)} WHERE id = ?"
-            cursor.execute(query, values)
+            cursor.execute("""
+                UPDATE guests 
+                SET ready = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            """, (update_data.ready, guest_id))
             conn.commit()
         
         # Return updated guest
