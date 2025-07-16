@@ -74,15 +74,15 @@
             <tr>
                 <form method="post" action="/add-guest">
                     <td></td>
-                    <td><input name="first_name" type="text" required value="{{ form_data.first_name|e if form_data.first_name is defined else '' }}"></td>
-                    <td><input name="last_name" type="text" required value="{{ form_data.last_name|e if form_data.last_name is defined else '' }}"></td>
-                    <td><input name="greeting_name" type="text" value="{{ form_data.greeting_name|e if form_data.greeting_name is defined else '' }}"></td>
+                    <td><input name="first_name" type="text" required value=""></td>
+                    <td><input name="last_name" type="text" required value=""></td>
+                    <td><input name="greeting_name" type="text" value=""></td>
                     <td>
-  <input type="text" id="phone-input" name="phone" value="{{ form_data.phone if form_data else '' }}" style="width: 130px;">
+  <input type="text" id="phone-input" name="phone" value="" style="width: 130px;">
   <span id="phone-error"></span>
 </td>
-                    <td><input name="group_id" type="text" required value="{{ form_data.group_id|e if form_data.group_id is defined else '' }}"></td>
-                    <td style="text-align:center"><input name="is_group_primary" type="checkbox" value="true" {% if form_data.is_group_primary %}checked{% endif %}></td>
+                    <td><input name="group_id" type="text" required value=""></td>
+                    <td style="text-align:center"><input name="is_group_primary" type="checkbox" value="true" ></td>
                     <td></td>
                     <td></td>
                     <td></td>
@@ -156,4 +156,6 @@
         }
       });
     </script>
+
+
 </html>
