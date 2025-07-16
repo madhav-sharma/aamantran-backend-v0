@@ -41,4 +41,4 @@ class GuestResponse(GuestBase):
     phone_class: Optional[str] = None
     
     class Config:
-        orm_mode = True 
+        from_attributes = True
