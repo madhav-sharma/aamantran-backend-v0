@@ -173,12 +173,10 @@ async def extract_guest_info_from_webhook(db_path: str, payload: Dict[str, Any])
                         # Get phone number from incoming message
                         from_number = message.get('from')
                         if from_number:
-                            # Add + prefix for database lookup
-                            phone_with_plus = f"+{from_number}"
                             async with aiosqlite.connect(db_path) as db:
                                 cursor = await db.execute(
                                     "SELECT id FROM guests WHERE phone = ?", 
-                                    (phone_with_plus,)
+                                    (from_number,)
                                 )
                                 result = await cursor.fetchone()
                                 if result:

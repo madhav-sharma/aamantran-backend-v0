@@ -215,7 +215,6 @@ async def send_invite_to_guest(phone_number: str, guest_name: str, guest_id: int
     """
     Background task to send WhatsApp invite to a single guest
     """
-    phone_number = phone_number[1:] # remove plus sign
     try:
         message_data = create_template_message(
             recipient=phone_number,
