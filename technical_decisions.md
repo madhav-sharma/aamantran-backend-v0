@@ -1,0 +1,5 @@
+- No docker
+- Ignore python versions, just add dependencies to pyproject.toml
+- sqlalchemy for database
+- sqlite locally
+- don't worry about internet exposure
