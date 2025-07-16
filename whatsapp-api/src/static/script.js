@@ -169,74 +169,101 @@ function validateAndFormatPhone(input, isImmediate = false) {
     const errorSpan = document.getElementById('phone-error');
     let errorMessage = '';
     
-    // Immediate checks: Must start with '+', and only + followed by digits
-    if (value && !value.startsWith('+')) {
-        errorMessage = 'Must start with "+"';
-    } else if (value && !/^\+\d*$/.test(value)) {
-        errorMessage = 'Must contain only numbers after "+"';
-    }
+    // Strip all non-digit characters except + for validation
+    const cleanValue = value.replace(/[^\d+]/g, '');
     
-    // If no immediate error and not immediate call, perform full debounced validation
-    if (!errorMessage && !isImmediate && value) {
-        const cleanValue = value.replace(/[^+\d]/g, '');  // For validation, but don't modify input yet
-        let formatted = cleanValue;
-        
-        if (cleanValue.startsWith('+1') && cleanValue.length === 12) {  // US: +1 + 10 digits
-            isPhoneValid = true;
-            formatted = '+1-' + cleanValue.slice(2,5) + '-' + cleanValue.slice(5,8) + '-' + cleanValue.slice(8);  // e.g., +1-XXX-XXX-XXXX
-        } else if (cleanValue.startsWith('+44') && cleanValue.length === 13) {  // UK: +44 + 10 digits
-            isPhoneValid = true;
-            formatted = '+44-' + cleanValue.slice(3,7) + '-' + cleanValue.slice(7,10) + '-' + cleanValue.slice(10);  // e.g., +44-XXXX-XXX-XXX
-        } else if (cleanValue.startsWith('+91') && cleanValue.length === 13) {  // India: +91 + 10 digits
-            isPhoneValid = true;
-            formatted = '+91-' + cleanValue.slice(3,8) + '-' + cleanValue.slice(8);  // e.g., +91-XXXXX-XXXXX
-        } else if (cleanValue.startsWith('+971') && cleanValue.length === 13) {  // UAE: +971 + 9 digits
-            isPhoneValid = true;
-            formatted = '+971-' + cleanValue.slice(4,6) + '-' + cleanValue.slice(6,9) + '-' + cleanValue.slice(9);  // e.g., +971-XX-XXX-XXXX
-        } else if (cleanValue.length >= 9 && cleanValue.length <= 16) {  // Other countries: + followed by 8-15 digits, little validation
-            isPhoneValid = true;
-            formatted = cleanValue;  // No specific formatting for others
-        } else {
-            errorMessage = 'Not a valid phone number';
+    // Check if user is typing
+    if (isImmediate) {
+        // Basic validation while typing
+        if (value && !value.startsWith('+')) {
+            errorMessage = 'Must start with "+"';
             isPhoneValid = false;
+        } else if (value && cleanValue !== value.replace(/[\s-]/g, '')) {
+            // Allow only numbers, +, spaces, and dashes
+            errorMessage = 'Only numbers, spaces, and dashes allowed after "+"';
+            isPhoneValid = false;
+        } else {
+            // While typing, don't show error if it's just incomplete
+            isPhoneValid = false; // Will be set to true after full validation
         }
-        
-        if (isPhoneValid) {
-            input.value = formatted;  // Apply human-readable format to input (display only)
+    } else {
+        // Full validation (debounced)
+        if (value && !cleanValue.startsWith('+')) {
+            errorMessage = 'Must start with "+"';
+            isPhoneValid = false;
+        } else if (value && cleanValue.length > 1) {
+            // Validate known formats
+            if (cleanValue.startsWith('+1') && cleanValue.length === 12) {  // US/Canada: +1 + 10 digits
+                isPhoneValid = true;
+            } else if (cleanValue.startsWith('+44') && cleanValue.length === 13) {  // UK: +44 + 10 digits
+                isPhoneValid = true;
+            } else if (cleanValue.startsWith('+91') && cleanValue.length === 13) {  // India: +91 + 10 digits
+                isPhoneValid = true;
+            } else if (cleanValue.startsWith('+971') && cleanValue.length === 13) {  // UAE: +971 + 9 digits
+                isPhoneValid = true;
+            } else if (cleanValue.length >= 9 && cleanValue.length <= 16) {  // Other countries: + followed by 8-15 digits
+                isPhoneValid = true;
+            } else {
+                errorMessage = 'Invalid phone number format';
+                isPhoneValid = false;
+            }
+        } else if (value && cleanValue.length === 1) {
+            errorMessage = 'Phone number incomplete';
+            isPhoneValid = false;
+        } else if (!value) {
+            // Empty is valid for non-primary
+            isPhoneValid = true;
+            errorMessage = '';
         }
-    } else if (errorMessage) {
-        isPhoneValid = false;
-    } else if (!value) {
-        // Empty phone is valid for non-primary contacts
-        isPhoneValid = true;
     }
     
+    // Update UI
     if (errorMessage) {
-        input.style.border = '1px solid red';  // Error style
+        input.style.border = '1px solid red';
         errorSpan.textContent = errorMessage;
         errorSpan.style.color = 'red';
+    } else if (!isImmediate && value && isPhoneValid) {
+        input.style.border = '1px solid green';
+        errorSpan.textContent = '✓ Valid phone number';
+        errorSpan.style.color = 'green';
     } else {
-        input.style.border = '';  // Reset
+        input.style.border = '';
         errorSpan.textContent = '';
     }
     
     // Update form validation state - phone validation depends on primary checkbox
     const isPrimary = document.getElementById('is_group_primary').checked;
-    formValidationState.phone = !isPrimary || (isPrimary && isPhoneValid && value);
+    if (isPrimary) {
+        formValidationState.phone = isPhoneValid && !!value;
+        if (!value) {
+            input.style.border = '1px solid red';
+            errorSpan.textContent = 'Phone number required for primary contacts';
+            errorSpan.style.color = 'red';
+        }
+    } else {
+        formValidationState.phone = true; // Always valid for non-primary
+    }
     updateSubmitButtonState();
 }
 
-// Format phone for display
+// Format phone for display in table
 function formatPhoneForDisplay(phone) {
     if (!phone) return '';
     
-    if (phone.startsWith('+91') && phone.length === 13) {
-        return '+91-' + phone.slice(3,8) + '-' + phone.slice(8);
-    } else if (phone.startsWith('+971') && phone.length === 13) {
-        return '+971-' + phone.slice(4,6) + '-' + phone.slice(6,9) + '-' + phone.slice(9);
+    // Clean the phone number first
+    const clean = phone.replace(/[^\d+]/g, '');
+    
+    if (clean.startsWith('+1') && clean.length === 12) {
+        return '+1-' + clean.slice(2,5) + '-' + clean.slice(5,8) + '-' + clean.slice(8);
+    } else if (clean.startsWith('+44') && clean.length === 13) {
+        return '+44-' + clean.slice(3,7) + '-' + clean.slice(7,10) + '-' + clean.slice(10);
+    } else if (clean.startsWith('+91') && clean.length === 13) {
+        return '+91-' + clean.slice(3,8) + '-' + clean.slice(8);
+    } else if (clean.startsWith('+971') && clean.length === 13) {
+        return '+971-' + clean.slice(4,6) + '-' + clean.slice(6,9) + '-' + clean.slice(9);
     }
     
-    return phone;
+    return clean;
 }
 
 // Format datetime for display
@@ -400,7 +427,7 @@ async function handleAddGuest(event) {
         first_name: formData.get('first_name').trim(),
         last_name: formData.get('last_name').trim(),
         greeting_name: formData.get('greeting_name').trim() || null,
-        phone: phoneInput.value ? phoneInput.value.replace(/-/g, '') : null,  // Remove formatting
+        phone: phoneInput.value ? phoneInput.value.replace(/[^\d+]/g, '') : null,  // Remove all formatting except + and digits
         group_id: formData.get('group_id').trim(),
         is_group_primary: isPrimary,
         ready: false
@@ -508,6 +535,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const primaryCheckbox = document.getElementById('is_group_primary');
     if (primaryCheckbox) {
         primaryCheckbox.addEventListener('change', () => {
+            // Force full validation when primary status changes
             validateAndFormatPhone(phoneInput, false);
         });
     }
