@@ -1,3 +1,4 @@
+
 // Global variables
 let guests = [];
 let isPhoneValid = false;

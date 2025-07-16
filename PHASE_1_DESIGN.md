@@ -53,6 +53,7 @@ The only server-side validations are:
 2. Business rule validation (e.g., group must have a primary before adding non-primary members)
 3. Required field validation based on other fields (e.g., primary contacts must have phone numbers)
 
+
 ### Database Schema
 
 Single SQLite database with two tables: `guests` and `logs`. Define SQLAlchemy models for each.
@@ -132,7 +133,9 @@ class Log(Base):
 - **Main Page**: `/` (GET) - Serves a Jinja template with an HTML structure, including a table placeholder, input fields for adding guests, and buttons. JS script fetches guest data via API (GET /guests), populates the table dynamically, and handles interactions.
 - **Table**: Displays all guests with read-only columns for all fields except Ready (editable checkbox). Names, phone, and group information cannot be modified after creation. Columns: ID, Prefix (if present), First Name, Last Name, Greeting Name, Phone (with color class as per Appendix C; display with human-readable formatting via JS), Group ID, Is Primary (read-only), Ready (editable checkbox with auto-submit via JS as per Appendix B), Sent to WA (text), API Call At (datetime or 'N/A'), Sent At (datetime or 'N/A'), Delivered At (datetime or 'N/A'), Read At (datetime or 'N/A'), Message ID.
 - Rows sorted by group_id then is_group_primary (descending) via JS or API query.
+
 - **Add Guest**: Input fields (Prefix input with id="prefix-input" and `<span id="prefix-error"></span>`, First Name (with id="first-name-input" and `<span id="first-name-error"></span>` for validation as per Appendix A), Last Name (similar), Greeting Name (similar), Phone (with id="phone-input" and `<span id="phone-error"></span>` for validation as per Appendix C), Group ID (with id="group-id-input" and `<span id="group-id-error"></span>` for validation as per Appendix D), Is Primary checkbox). Submit button is disabled until all format validations pass. JS handles "Add Guest" button click: Validates locally (including strict name, phone, and group_id format checks via JS, preventing submission if invalid), sends POST to /guests via fetch if valid, refreshes table on success, shows error message if failed.
+
 - **Send Invites**: Button triggers JS to call POST /send-invites, then refreshes table.
 - **UX**: Dynamic updates without full page reloads. Use CSS for validation errors (e.g., red borders). Display 'N/A' or empty for NULL timestamps. Inline JS for name sanitization/capitalization, phone debouncing/formatting, group_id validation, and ready auto-submit.
 - **No Bulk Upload**: Addition feels "bulk-like" but is one-at-a-time with context (user sees previous for reference, e.g., to match group_ids).
@@ -151,6 +154,7 @@ class Log(Base):
       - If is_group_primary=False: Query database to ensure at least one primary already exists for this group_id
     - **Primary phone requirement**: If is_group_primary=True, phone must not be empty/null
   - NO format validation, NO regex checks, NO string manipulation on server
+
   - If valid, create Guest instance, add to session, commit. Return 201 Created with guest data on success; 400 with JSON error on failure.
 
 - **POST /send-invites**:
@@ -372,7 +376,9 @@ This appendix introduces new requirements for phone number management, including
 
 #### 2. UI-Level Debounced Typing Check for Formatting and Validation
 
+
 **Requirement**: In the add-guest form's phone input, provide tight browser-side real-time feedback as the user types: immediately flag errors if the input does not start with '+' or contains anything but numbers, spaces, and dashes after the '+'. Allow users to type with or without formatting (spaces and dashes are permitted). Perform full validation to ensure it matches valid E.164 format (any country code with appropriate number of digits). Use debouncing to delay full validation until typing pauses (e.g., 300ms), but apply immediate checks for basic format. Show clear error messages with green checkmark for valid numbers. Do not auto-format the input field - users can type naturally with or without dashes/spaces. The server will strip all formatting before storage. For display in tables, apply consistent formatting based on country code. Prevent submission if invalid, and ensure the submit button is disabled when phone format is invalid (for primary contacts, phone is required).
+
 
 **Implementation Guidance**:
 
@@ -812,8 +818,10 @@ GET /
 - **500**: Internal Server Error
 
 ### Validation Types
+
 - **Client-Side**: ALL format validation (names a-zA-Z only, phone E.164 format, group_id a-z only, greeting name max 60 chars). Submit button disabled until valid.
 - **Server-Side**: Business logic validation ONLY (phone uniqueness via DB constraint, group primary rules via DB queries, primary phone requirement)
+
 
 ## Data Types
 
